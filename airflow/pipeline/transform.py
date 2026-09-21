@@ -295,7 +295,12 @@ def _history_window(
     histories: list[StationHistory], calculated_at: datetime
 ) -> tuple[datetime, datetime]:
     if not histories:
-        end = _utc_midnight(calculated_at)
+        end = _utc_datetime(calculated_at).replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
         return end - HISTORY_DURATION, end
     start, end = histories[0].start, histories[0].end
     if end - start != HISTORY_DURATION:

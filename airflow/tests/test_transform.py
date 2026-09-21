@@ -157,6 +157,22 @@ def test_comparison_has_empty_active_summary_when_all_latest_values_are_stale_or
     assert comparison.ranking == []
 
 
+def test_empty_histories_floor_non_midnight_calculation_to_utc_reporting_window():
+    calculated_at = datetime(2026, 9, 22, 12, 30, tzinfo=UTC)
+
+    comparison = build_comparison([], [], calculated_at)
+
+    assert comparison.calculated_at == calculated_at
+    assert len(comparison.daily_reporting_coverage) == 30
+    assert comparison.daily_reporting_coverage[0].date.isoformat() == "2026-08-23"
+    assert comparison.daily_reporting_coverage[-1].date.isoformat() == "2026-09-21"
+
+
+def test_comparison_rejects_naive_calculation_timestamp():
+    with pytest.raises(ValueError, match="timezone"):
+        build_comparison([], [], datetime(2026, 9, 22, 12, 30))
+
+
 def test_fresh_ranking_is_descending_with_stable_station_id_ties():
     stations = [
         latest(20, 25.0, NOW - timedelta(hours=1)),
