@@ -16,11 +16,13 @@ class Coordinates(BaseModel):
     @field_validator("latitude", "longitude", mode="before")
     @classmethod
     def require_finite_number(cls, value: object) -> object:
-        if (
-            isinstance(value, bool)
-            or not isinstance(value, (int, float))
-            or not math.isfinite(value)
-        ):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("coordinate must be a finite number")
+        try:
+            finite = math.isfinite(value)
+        except OverflowError:
+            finite = False
+        if not finite:
             raise ValueError("coordinate must be a finite number")
         return value
 

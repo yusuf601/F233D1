@@ -143,6 +143,12 @@ def test_rejects_non_numeric_or_non_finite_coordinates(latitude, longitude):
     assert normalize_global_locations([row]) == []
 
 
+def test_discards_extreme_integer_coordinate_without_aborting_normalization():
+    row = location(latitude=10**1000)
+
+    assert normalize_global_locations([row]) == []
+
+
 def test_valid_location_without_sensors_keeps_empty_sensor_list():
     locations = valid_indonesia_locations([location(sensors=[])])
 
