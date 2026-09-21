@@ -10,7 +10,7 @@ export const manifest = {
     comparisonIndonesia: 'complete',
   },
   counts: {
-    globalStations: 2,
+    globalStations: 3,
     indonesiaStations: 2,
     indonesiaLatest: {
       fresh: 1,
@@ -38,6 +38,17 @@ export const globalStations = {
       properties: {
         stationId: 101,
         name: 'Jakarta Central',
+        countryCode: 'ID',
+        countryName: 'Indonesia',
+        hasPm25: true,
+      },
+    },
+    {
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [115.2167, -8.65] },
+      properties: {
+        stationId: 102,
+        name: 'Denpasar South',
         countryCode: 'ID',
         countryName: 'Indonesia',
         hasPm25: true,

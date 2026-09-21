@@ -39,7 +39,7 @@ describe('loadDashboardData', () => {
     const data = await loadDashboardData(fetcher)
 
     expect(data.manifest.schemaVersion).toBe(1)
-    expect(data.global.features).toHaveLength(2)
+    expect(data.global.features).toHaveLength(3)
     expect(fetcher).toHaveBeenCalledTimes(5)
     expect(fetcher).toHaveBeenNthCalledWith(1, '/data/manifest.json', {
       cache: 'no-cache',
@@ -170,6 +170,103 @@ describe('loadDashboardData', () => {
       ),
     ).rejects.toThrow()
   })
+
+  it('rejects a stale station in the latest comparison ranking', async () => {
+    const staleLatest = {
+      ...indonesiaLatest,
+      features: [
+        {
+          ...indonesiaLatest.features[0],
+          properties: {
+            ...indonesiaLatest.features[0].properties,
+            status: 'stale',
+          },
+        },
+        indonesiaLatest.features[1],
+      ],
+    }
+
+    await expect(
+      loadDashboardData(
+        fixtureFetcher({
+          ...validFiles,
+          '/data/indonesia-latest.json': staleLatest,
+        }),
+      ),
+    ).rejects.toThrow('Comparison requires a matching fresh latest reading')
+  })
+
+  it('rejects an unavailable station in the latest comparison ranking', async () => {
+    const comparisonWithUnavailable = {
+      ...indonesiaComparison,
+      ranking: [
+        {
+          stationId: 102,
+          stationName: 'Denpasar South',
+          value: 12.4,
+          measuredAt: '2026-09-20T22:00:00Z',
+        },
+      ],
+    }
+
+    await expect(
+      loadDashboardData(
+        fixtureFetcher({
+          ...validFiles,
+          '/data/indonesia-comparison.json': comparisonWithUnavailable,
+        }),
+      ),
+    ).rejects.toThrow('Comparison requires a matching fresh latest reading')
+  })
+
+  it('rejects an unknown station in the latest comparison ranking', async () => {
+    const comparisonWithUnknown = {
+      ...indonesiaComparison,
+      ranking: [
+        {
+          stationId: 999,
+          stationName: 'Unknown Station',
+          value: 12.4,
+          measuredAt: '2026-09-20T22:00:00Z',
+        },
+      ],
+    }
+
+    await expect(
+      loadDashboardData(
+        fixtureFetcher({
+          ...validFiles,
+          '/data/indonesia-comparison.json': comparisonWithUnknown,
+        }),
+      ),
+    ).rejects.toThrow('Comparison requires a matching fresh latest reading')
+  })
+
+  it.each(['highestLatest', 'lowestLatest'] as const)(
+    'rejects a mismatched %s comparison entry',
+    async (summaryField) => {
+      const comparisonWithMismatch = {
+        ...indonesiaComparison,
+        summary: {
+          ...indonesiaComparison.summary,
+          [summaryField]: {
+            ...indonesiaComparison.summary[summaryField],
+            value: 99.9,
+            measuredAt: '2026-09-20T22:00:00Z',
+          },
+        },
+      }
+
+      await expect(
+        loadDashboardData(
+          fixtureFetcher({
+            ...validFiles,
+            '/data/indonesia-comparison.json': comparisonWithMismatch,
+          }),
+        ),
+      ).rejects.toThrow('Comparison requires a matching fresh latest reading')
+    },
+  )
 })
 
 function StateProbe() {
@@ -206,7 +303,7 @@ describe('DashboardDataProvider', () => {
     const retry = await screen.findByRole('button', { name: /retry/i })
     await userEvent.click(retry)
 
-    expect(await screen.findByText('ready 2')).toBeTruthy()
+    expect(await screen.findByText('ready 3')).toBeTruthy()
     await waitFor(() => {
       const manifestRequests = fetcher.mock.calls.filter(
         ([url]) => String(url) === '/data/manifest.json',

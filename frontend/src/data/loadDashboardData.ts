@@ -5,7 +5,9 @@ import {
   historySchema,
   latestSchema,
   manifestSchema,
+  type ComparisonData,
   type DashboardData,
+  type LatestData,
   type Manifest,
 } from './schema'
 
@@ -40,6 +42,33 @@ function assertSameDatasetVersion(
   }
 }
 
+function assertComparisonUsesFreshLatest(
+  latest: LatestData,
+  comparison: ComparisonData,
+): void {
+  const latestByStationId = new Map(
+    latest.features.map(({ properties }) => [properties.stationId, properties]),
+  )
+  const references = [
+    ...comparison.ranking,
+    ...(comparison.summary.highestLatest ? [comparison.summary.highestLatest] : []),
+    ...(comparison.summary.lowestLatest ? [comparison.summary.lowestLatest] : []),
+  ]
+
+  for (const reference of references) {
+    const reading = latestByStationId.get(reference.stationId)
+    if (
+      reading?.status !== 'fresh' ||
+      reading.value !== reference.value ||
+      reading.measuredAt !== reference.measuredAt
+    ) {
+      throw new DashboardDataError(
+        `Comparison requires a matching fresh latest reading: ${reference.stationId}`,
+      )
+    }
+  }
+}
+
 export async function loadDashboardData(
   fetcher: typeof fetch = fetch,
 ): Promise<DashboardData> {
@@ -67,5 +96,6 @@ export async function loadDashboardData(
   ])
 
   assertSameDatasetVersion(manifest, [global, latest, history, comparison])
+  assertComparisonUsesFreshLatest(latest, comparison)
   return { manifest, global, latest, history, comparison }
 }
