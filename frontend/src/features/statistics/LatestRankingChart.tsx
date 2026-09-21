@@ -4,6 +4,7 @@ import { selectRankingRows } from './statisticsSelectors'
 
 type LatestRankingChartProps = {
   comparison: ComparisonData
+  summaryId?: string
 }
 
 type RankingTooltipParam = {
@@ -33,7 +34,7 @@ function formatUtcDateTime(value: string): string {
   }).format(new Date(value))
 }
 
-export function LatestRankingChart({ comparison }: LatestRankingChartProps) {
+export function LatestRankingChart({ comparison, summaryId }: LatestRankingChartProps) {
   const rows = selectRankingRows(comparison)
 
   if (rows.length === 0) {
@@ -88,10 +89,13 @@ export function LatestRankingChart({ comparison }: LatestRankingChartProps) {
 
   return (
     <ReactECharts
+      className="chart-visualization"
       option={option}
       opts={{ renderer: 'svg' }}
       style={{ height: Math.max(260, rows.length * 42) }}
+      role="img"
       aria-label="Latest station PM2.5 ranking"
+      aria-describedby={summaryId}
     />
   )
 }

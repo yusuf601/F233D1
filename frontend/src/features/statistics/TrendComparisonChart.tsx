@@ -5,6 +5,7 @@ import { buildUtcDateDomain, toThirtyDaySeries } from './statisticsSelectors'
 type TrendComparisonChartProps = {
   history: HistoryData
   selectedIds: number[]
+  summaryId?: string
 }
 
 const SERIES_COLORS = ['#117d63', '#b97116', '#426b9a']
@@ -12,6 +13,7 @@ const SERIES_COLORS = ['#117d63', '#b97116', '#426b9a']
 export function TrendComparisonChart({
   history,
   selectedIds,
+  summaryId,
 }: TrendComparisonChartProps) {
   const dates = buildUtcDateDomain(history.startDate, history.endDate)
   const selected = selectedIds.slice(0, 3)
@@ -68,10 +70,13 @@ export function TrendComparisonChart({
 
   return (
     <ReactECharts
+      className="chart-visualization"
       option={option}
       opts={{ renderer: 'svg' }}
       style={{ height: 390 }}
+      role="img"
       aria-label="Thirty day station trend comparison"
+      aria-describedby={summaryId}
     />
   )
 }

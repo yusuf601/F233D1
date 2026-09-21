@@ -34,3 +34,13 @@ it('retains three selected stations and announces the exact Indonesian limit mes
   expect(screen.getByRole('checkbox', { name: 'Station 2' })).toBeChecked()
   expect(screen.getByRole('checkbox', { name: 'Station 3' })).toBeChecked()
 })
+
+it('exposes the picker instructions as the checkbox group description', () => {
+  render(
+    <StationPicker stations={stations} selectedIds={[1]} onChange={() => {}} />,
+  )
+
+  expect(
+    screen.getByRole('group', { name: 'Pilih hingga tiga stasiun' }),
+  ).toHaveAccessibleDescription('Bandingkan rata-rata harian PM2.5.')
+})

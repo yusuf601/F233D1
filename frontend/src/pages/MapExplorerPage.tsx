@@ -33,7 +33,7 @@ export function MapExplorerPage() {
           for published measurements.
         </p>
       </header>
-      <div className="mt-8 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]" aria-label="Map workspace">
+      <div className="map-workspace" aria-label="Map workspace">
         <div className="min-w-0">
           <StationMap data={mapData} target={target} onSelect={(id) => {
             const station = stationLookup.get(id)

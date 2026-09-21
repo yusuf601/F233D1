@@ -1,6 +1,12 @@
 import { Link } from 'react-router-dom'
 import type { joinLatest } from './mapSelectors'
 
+const STATUS_LABEL = {
+  fresh: 'Data terbaru',
+  stale: 'Data lama',
+  unavailable: 'Data belum tersedia',
+} as const
+
 export function StationDetail({ station }: { station: ReturnType<typeof joinLatest> }) {
   return (
     <section aria-label="Selected station" aria-live="polite" className="mt-6 border-t border-[var(--color-border)] pt-6">
@@ -15,7 +21,12 @@ export function StationDetail({ station }: { station: ReturnType<typeof joinLate
               {station.latestValue ?? 'No latest measurement available'}
             </dd>
             <dt>Unit</dt><dd>{station.unit ?? 'Unavailable'}</dd>
-            <dt>Freshness</dt><dd>{station.status[0].toUpperCase() + station.status.slice(1)}</dd>
+            <dt>Status data</dt>
+            <dd>
+              <span className={`data-state data-state--${station.status}`}>
+                {STATUS_LABEL[station.status]}
+              </span>
+            </dd>
             <dt>Measured</dt>
             <dd>{station.measuredAt ? (
               <time dateTime={station.measuredAt}>

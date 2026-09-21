@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useDashboardData } from '../data/DashboardDataProvider'
 import { ErrorScreen } from './ErrorScreen'
@@ -13,6 +14,7 @@ function formatPublicationTime(value: string): string {
 
 export function AppShell() {
   const dashboard = useDashboardData()
+  const mainContent = useRef<HTMLElement>(null)
 
   if (dashboard.status === 'loading') return <LoadingScreen />
   if (dashboard.status === 'error') {
@@ -23,7 +25,11 @@ export function AppShell() {
 
   return (
     <div className="app-shell">
-      <a className="skip-link" href="#main-content">
+      <a
+        className="skip-link"
+        href="#main-content"
+        onClick={() => mainContent.current?.focus()}
+      >
         Skip to content
       </a>
       <header className="app-header">
@@ -52,7 +58,12 @@ export function AppShell() {
         </div>
       </header>
 
-      <main id="main-content" className="app-content">
+      <main
+        id="main-content"
+        ref={mainContent}
+        className="app-content"
+        tabIndex={-1}
+      >
         <Outlet />
       </main>
     </div>

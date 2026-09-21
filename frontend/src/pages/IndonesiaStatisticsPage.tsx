@@ -124,14 +124,17 @@ export function IndonesiaStatisticsPage() {
       <section className="statistics-section" aria-labelledby="ranking-title">
         <div className="statistics-section__heading">
           <h2 id="ranking-title">Latest station ranking</h2>
-          <p>
+          <p id="ranking-summary">
             Fresh latest readings, ordered by the published value. No qualitative
             AQI category is inferred.
           </p>
         </div>
         <div className="chart-surface">
           <Suspense fallback={<ChartFallback />}>
-            <LatestRankingChart comparison={data.comparison} />
+            <LatestRankingChart
+              comparison={data.comparison}
+              summaryId="ranking-summary"
+            />
           </Suspense>
         </div>
       </section>
@@ -139,7 +142,7 @@ export function IndonesiaStatisticsPage() {
       <section className="statistics-section" aria-labelledby="trend-title">
         <div className="statistics-section__heading">
           <h2 id="trend-title">30-day station trends</h2>
-          <p>
+          <p id="trend-summary">
             Selected: {selectedStationNames(data.history.stations, activeSelection)}.
             Missing dates remain gaps and are never counted as zero.
           </p>
@@ -155,6 +158,7 @@ export function IndonesiaStatisticsPage() {
               <TrendComparisonChart
                 history={data.history}
                 selectedIds={activeSelection}
+                summaryId="trend-summary"
               />
             </Suspense>
           </div>
@@ -164,14 +168,17 @@ export function IndonesiaStatisticsPage() {
       <section className="statistics-section" aria-labelledby="coverage-title">
         <div className="statistics-section__heading">
           <h2 id="coverage-title">Reporting coverage</h2>
-          <p>
+          <p id="coverage-summary">
             Daily coverage is the share of eligible stations reporting. Station totals
             distinguish observed hours, available days, and coverage percent.
           </p>
         </div>
         <div className="chart-surface">
           <Suspense fallback={<ChartFallback />}>
-            <CoverageChart comparison={data.comparison} />
+            <CoverageChart
+              comparison={data.comparison}
+              summaryId="coverage-summary"
+            />
           </Suspense>
         </div>
         <CoverageTable rows={coverageRows} />

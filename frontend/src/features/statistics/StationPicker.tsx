@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import type { StationHistory } from '../../data/schema'
 import { toggleStation } from './statisticsSelectors'
 
@@ -14,6 +14,7 @@ export function StationPicker({
   onChange,
 }: StationPickerProps) {
   const [limitReached, setLimitReached] = useState(false)
+  const hintId = useId()
 
   function handleToggle(stationId: number) {
     const result = toggleStation(selectedIds, stationId)
@@ -22,9 +23,11 @@ export function StationPicker({
   }
 
   return (
-    <fieldset className="station-picker">
+    <fieldset className="station-picker" aria-describedby={hintId}>
       <legend>Pilih hingga tiga stasiun</legend>
-      <p className="station-picker__hint">Bandingkan rata-rata harian PM2.5.</p>
+      <p id={hintId} className="station-picker__hint">
+        Bandingkan rata-rata harian PM2.5.
+      </p>
       <div className="station-picker__options">
         {stations.map((station) => (
           <label key={station.stationId} className="station-picker__option">

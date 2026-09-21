@@ -3,6 +3,7 @@ import type { ComparisonData } from '../../data/schema'
 
 type CoverageChartProps = {
   comparison: ComparisonData
+  summaryId?: string
 }
 
 type CoverageTooltipParam = {
@@ -14,7 +15,7 @@ type CoverageTooltipParam = {
   }
 }
 
-export function CoverageChart({ comparison }: CoverageChartProps) {
+export function CoverageChart({ comparison, summaryId }: CoverageChartProps) {
   const coverage = comparison.dailyReportingCoverage
 
   if (coverage.length === 0) {
@@ -61,10 +62,13 @@ export function CoverageChart({ comparison }: CoverageChartProps) {
 
   return (
     <ReactECharts
+      className="chart-visualization"
       option={option}
       opts={{ renderer: 'svg' }}
       style={{ height: 320 }}
+      role="img"
       aria-label="Daily station reporting coverage"
+      aria-describedby={summaryId}
     />
   )
 }
