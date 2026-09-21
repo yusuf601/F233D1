@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+.superpowers/
+data/cache/*
+data/staging/*
+!data/cache/.gitkeep
+!data/staging/.gitkeep
+airflow/logs/
+__pycache__/
+.pytest_cache/
