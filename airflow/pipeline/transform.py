@@ -29,7 +29,7 @@ def _finite_number(value: object) -> object:
     return value
 
 
-def _utc_datetime(value: object) -> datetime:
+def _aware_datetime(value: object) -> datetime:
     if isinstance(value, datetime):
         parsed = value
     elif isinstance(value, str):
@@ -41,6 +41,19 @@ def _utc_datetime(value: object) -> datetime:
         raise ValueError("timestamp must be a datetime or ISO-8601 string")
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError("timestamp must include a timezone")
+    return parsed
+
+
+def _utc_datetime(value: object) -> datetime:
+    return _aware_datetime(value).astimezone(UTC)
+
+
+def _utc_midnight(value: object) -> datetime:
+    parsed = _aware_datetime(value)
+    if parsed.utcoffset() != timedelta(0) or any(
+        (parsed.hour, parsed.minute, parsed.second, parsed.microsecond)
+    ):
+        raise ValueError("history boundary must be a timezone-aware UTC midnight")
     return parsed.astimezone(UTC)
 
 
@@ -115,19 +128,22 @@ class StationHistory(TransformModel):
     start: datetime
     end: datetime
     points: list[DailyPoint]
+    observations: list[HourlyObservation]
 
     @field_validator("start", "end", mode="before")
     @classmethod
     def validate_timestamp(cls, value: object) -> datetime:
-        return _utc_datetime(value)
+        return _utc_midnight(value)
 
     @model_validator(mode="after")
     def validate_window_and_points(self) -> StationHistory:
-        if self.end <= self.start:
-            raise ValueError("history interval must have positive duration")
+        if self.end - self.start != HISTORY_DURATION:
+            raise ValueError("history interval must be exactly 30 days")
         dates = [point.date for point in self.points]
         if dates != sorted(set(dates)):
             raise ValueError("history points must have unique ascending dates")
+        if any(item.sensor_id != self.sensor_id for item in self.observations):
+            raise ValueError("history observations must belong to its sensor")
         return self
 
 
@@ -270,6 +286,8 @@ def freshness(measured_at: datetime | None, calculated_at: datetime) -> Freshnes
         return "unavailable"
     measured_utc = _utc_datetime(measured_at)
     calculated_utc = _utc_datetime(calculated_at)
+    if measured_utc > calculated_utc:
+        return "unavailable"
     return "fresh" if measured_utc >= calculated_utc - timedelta(hours=24) else "stale"
 
 
@@ -277,7 +295,8 @@ def _history_window(
     histories: list[StationHistory], calculated_at: datetime
 ) -> tuple[datetime, datetime]:
     if not histories:
-        return calculated_at - HISTORY_DURATION, calculated_at
+        end = _utc_midnight(calculated_at)
+        return end - HISTORY_DURATION, end
     start, end = histories[0].start, histories[0].end
     if end - start != HISTORY_DURATION:
         raise ValueError("station histories must cover one full 30-day interval")
@@ -288,6 +307,16 @@ def _history_window(
 
 def _date_range(start: datetime, end: datetime) -> list[date]:
     return [(start + timedelta(days=offset)).date() for offset in range((end - start).days)]
+
+
+def _observations_in_window(
+    history: StationHistory, start: datetime, end: datetime
+) -> list[HourlyObservation]:
+    return [
+        item
+        for item in deduplicate_observations(history.observations)
+        if start <= item.datetime_from < end and item.value is not None
+    ]
 
 
 def build_comparison(
@@ -331,32 +360,34 @@ def build_comparison(
 
     start, end = _history_window(history_rows, calculated_utc)
     possible_hours = int((end - start).total_seconds() / 3600)
-    histories_by_station = {row.station_id: row for row in history_rows}
+    observations_by_station = {
+        row.station_id: _observations_in_window(row, start, end)
+        for row in history_rows
+    }
     station_statistics: list[StationStatistic] = []
     for station in station_rows:
-        history = histories_by_station.get(station.station_id)
-        points = history.points if history is not None else []
-        hours_observed = sum(point.sample_count for point in points)
-        means = [point.mean for point in points]
+        observations = observations_by_station.get(station.station_id, [])
+        values = [item.value for item in observations]
+        observed_dates = {item.datetime_from.date() for item in observations}
         station_statistics.append(
             StationStatistic(
                 station_id=station.station_id,
                 station_name=station.station_name,
-                mean_30d=statistics.mean(means) if means else None,
-                maximum_30d=max(means) if means else None,
-                days_available=len(points),
-                hours_observed=hours_observed,
-                coverage_percent=hours_observed / possible_hours * 100,
+                mean_30d=statistics.mean(values) if values else None,
+                maximum_30d=max(values) if values else None,
+                days_available=len(observed_dates),
+                hours_observed=len(observations),
+                coverage_percent=len(observations) / possible_hours * 100,
             )
         )
 
     eligible_ids = set(station_ids)
     reporting_by_date: dict[date, set[int]] = defaultdict(set)
-    for history in history_rows:
-        if history.station_id not in eligible_ids:
+    for station_id, observations in observations_by_station.items():
+        if station_id not in eligible_ids:
             continue
-        for point in history.points:
-            reporting_by_date[point.date].add(history.station_id)
+        for item in observations:
+            reporting_by_date[item.datetime_from.date()].add(station_id)
     eligible_count = len(eligible_ids)
     daily_reporting_coverage = [
         DailyReportingCoverage(

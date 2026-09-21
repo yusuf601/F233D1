@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -65,6 +65,7 @@ def history(station_id: int, observations: list[HourlyObservation]) -> StationHi
         start=START,
         end=END,
         points=aggregate_daily(observations, START, END),
+        observations=observations,
     )
 
 
@@ -120,6 +121,26 @@ def test_freshness_includes_exact_24_hour_boundary_and_excludes_older():
     assert freshness(measured_at=None, calculated_at=NOW) == "unavailable"
 
 
+def test_future_measurement_is_unavailable():
+    assert (
+        freshness(measured_at=NOW + timedelta(microseconds=1), calculated_at=NOW)
+        == "unavailable"
+    )
+
+
+def test_future_measurement_is_excluded_from_latest_ranking():
+    comparison = build_comparison(
+        [
+            latest(1, 10.0, NOW - timedelta(hours=1)),
+            latest(2, 99.0, NOW + timedelta(microseconds=1)),
+        ],
+        [],
+        NOW,
+    )
+
+    assert [row.station_id for row in comparison.ranking] == [1]
+
+
 def test_comparison_has_empty_active_summary_when_all_latest_values_are_stale_or_missing():
     stations = [
         latest(1, 14.0, NOW - timedelta(hours=25)),
@@ -152,21 +173,23 @@ def test_fresh_ranking_is_descending_with_stable_station_id_ties():
     assert comparison.summary.lowest_latest == comparison.ranking[-1]
 
 
-def test_station_coverage_uses_all_possible_hours_in_the_full_interval():
+def test_station_statistics_use_deduplicated_observations_in_the_full_interval():
     station_history = history(
         1,
         [
             hour("2026-09-19T01:00:00Z", 10.0, sensor_id=501),
-            hour("2026-09-19T02:00:00Z", 14.0, sensor_id=501),
+            hour("2026-09-19T01:00:00Z", 999.0, sensor_id=501),
+            hour("2026-09-19T02:00:00Z", 90.0, sensor_id=501),
             hour("2026-09-21T01:00:00Z", 30.0, sensor_id=501),
+            hour("2026-09-22T00:00:00Z", 1000.0, sensor_id=501),
         ],
     )
 
     comparison = build_comparison([latest(1, 30.0, NOW - timedelta(hours=1))], [station_history], NOW)
     [stats] = comparison.station_statistics
 
-    assert stats.mean_30d == 21.0
-    assert stats.maximum_30d == 30.0
+    assert stats.mean_30d == pytest.approx((10 + 90 + 30) / 3)
+    assert stats.maximum_30d == 90.0
     assert stats.days_available == 2
     assert stats.hours_observed == 3
     assert stats.coverage_percent == pytest.approx(3 / (30 * 24) * 100)
@@ -191,3 +214,42 @@ def test_daily_reporting_coverage_uses_all_eligible_stations_and_keeps_gap_days(
     assert by_date["2026-09-19"].coverage_percent == 50.0
     assert by_date["2026-09-20"].reporting_stations == 0
     assert by_date["2026-09-20"].coverage_percent == 0.0
+
+
+@pytest.mark.parametrize(
+    ("start", "end", "message"),
+    [
+        (
+            START + timedelta(hours=1),
+            END + timedelta(hours=1),
+            "UTC midnight",
+        ),
+        (
+            datetime(2026, 8, 23, tzinfo=timezone(timedelta(hours=7))),
+            datetime(2026, 9, 22, tzinfo=timezone(timedelta(hours=7))),
+            "UTC midnight",
+        ),
+        (
+            datetime(2026, 8, 23),
+            datetime(2026, 9, 22),
+            "timezone",
+        ),
+        (
+            START,
+            END + timedelta(days=1),
+            "30 days",
+        ),
+    ],
+)
+def test_station_history_rejects_unsupported_window_boundaries(start, end, message):
+    with pytest.raises(ValueError, match=message):
+        StationHistory(
+            station_id=1,
+            station_name="Station 1",
+            sensor_id=501,
+            unit="µg/m³",
+            start=start,
+            end=end,
+            points=[],
+            observations=[],
+        )
