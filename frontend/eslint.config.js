@@ -2,6 +2,7 @@ import tsParser from '@typescript-eslint/parser'
 import tsPlugin from '@typescript-eslint/eslint-plugin'
 import reactPlugin from 'eslint-plugin-react'
 import reactHooksPlugin from 'eslint-plugin-react-hooks'
+import globals from 'globals'
 
 export default [
   {
@@ -16,6 +17,7 @@ export default [
         sourceType: 'module',
         ecmaFeatures: { jsx: true },
       },
+      globals: globals.browser,
     },
     plugins: {
       '@typescript-eslint': tsPlugin,
@@ -27,11 +29,9 @@ export default [
     },
     rules: {
       ...tsPlugin.configs.recommended.rules,
-      'react/jsx-uses-react': 'error',
-      'react/jsx-uses-vars': 'error',
-      'react/no-unknown-property': 'error',
-      'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
+      ...reactPlugin.configs.flat.recommended.rules,
+      ...reactPlugin.configs.flat['jsx-runtime'].rules,
+      ...reactHooksPlugin.configs.flat.recommended.rules,
     },
   },
 ]

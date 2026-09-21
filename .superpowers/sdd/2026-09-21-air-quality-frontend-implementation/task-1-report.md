@@ -42,3 +42,25 @@ Review finding addressed: ESLint now includes `eslint-plugin-react` and `eslint-
 Verification command: `npm run lint && npm run typecheck && npm run build`
 
 Result: all commands passed; the production build completed successfully and emitted `frontend/dist/index.html`.
+
+## Fix round 3
+
+Review finding addressed: the flat React recommended rules and flat React Hooks recommended rules are now applied, with the React JSX-runtime overrides for `react-jsx`; TypeScript parsing and `globals.browser` remain configured.
+
+Verification command: `npm run lint && npm run typecheck && npm run build`
+
+Concrete output:
+
+```text
+npm notice run frontend@0.0.0 lint
+npm notice run eslint .
+npm notice run frontend@0.0.0 typecheck
+npm notice run tsc -b --pretty false
+npm notice run frontend@0.0.0 build
+npm notice run npm run typecheck && vite build
+vite v8.3.0 building client environment for production...
+✓ 16 modules transformed.
+✓ built in 188ms
+```
+
+All three commands exited 0.
