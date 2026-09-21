@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
+import pytest
+
 from pipeline.locations import (
     normalize_global_locations,
     select_pm25_sensor,
@@ -13,7 +17,7 @@ def sensor(
     *,
     parameter: str = "pm25",
     units: str = "µg/m³",
-    last: str | None = None,
+    last: object | None = None,
 ) -> dict:
     row = {
         "id": sensor_id,
@@ -113,6 +117,32 @@ def test_omits_indonesia_rows_with_missing_id_or_coordinates():
     assert valid_indonesia_locations(rows) == []
 
 
+@pytest.mark.parametrize("invalid_id", [True, "101", 101.0])
+def test_rejects_coercible_location_ids(invalid_id):
+    row = location(location_id=invalid_id)
+
+    assert valid_indonesia_locations([row]) == []
+    assert normalize_global_locations([row]) == []
+
+
+@pytest.mark.parametrize(
+    ("latitude", "longitude"),
+    [
+        (True, 106.8456),
+        ("-6.2088", 106.8456),
+        (-6.2088, False),
+        (-6.2088, "106.8456"),
+        (float("nan"), 106.8456),
+        (-6.2088, float("inf")),
+    ],
+)
+def test_rejects_non_numeric_or_non_finite_coordinates(latitude, longitude):
+    row = location(latitude=latitude, longitude=longitude)
+
+    assert valid_indonesia_locations([row]) == []
+    assert normalize_global_locations([row]) == []
+
+
 def test_valid_location_without_sensors_keeps_empty_sensor_list():
     locations = valid_indonesia_locations([location(sensors=[])])
 
@@ -159,13 +189,64 @@ def test_sensor_selection_normalizes_aliases_and_discards_invalid_candidates():
     assert chosen.parameter == "pm25"
 
 
+@pytest.mark.parametrize("invalid_id", [True, "7", 7.0])
+def test_discards_coercible_sensor_ids(invalid_id):
+    [parsed] = valid_indonesia_locations(
+        [
+            location(
+                sensors=[
+                    sensor(
+                        invalid_id,
+                        parameter="PM2.5",
+                        last="2026-09-21T08:00:00Z",
+                    )
+                ]
+            )
+        ]
+    )
+
+    assert parsed.sensors == []
+    assert select_pm25_sensor(parsed) is None
+
+
+@pytest.mark.parametrize(
+    "invalid_timestamp",
+    [True, 1_700_000_000, "1700000000", "2026-09-21T08:00:00"],
+)
+def test_discards_non_iso_numeric_or_naive_sensor_timestamps(invalid_timestamp):
+    [parsed] = valid_indonesia_locations(
+        [location(sensors=[sensor(7, last=invalid_timestamp)])]
+    )
+
+    assert parsed.sensors == []
+    assert select_pm25_sensor(parsed) is None
+
+
+def test_sensor_accepts_timezone_aware_datetime():
+    parsed = Sensor(
+        id=7,
+        parameter="PM2.5",
+        units="µg/m³",
+        datetime_last=datetime(2026, 9, 21, 8, tzinfo=UTC),
+    )
+
+    assert parsed.datetime_last == datetime(2026, 9, 21, 8, tzinfo=UTC)
+
+
 def test_sensor_model_normalizes_pm25_alias_before_selection():
     parsed = Location(
         id=101,
         name="Jakarta Central",
         country_code="ID",
         coordinates=Coordinates(latitude=-6.2088, longitude=106.8456),
-        sensors=[Sensor(id=7, parameter="PM2.5", units="µg/m³")],
+        sensors=[
+            Sensor(
+                id=7,
+                parameter="PM2.5",
+                units="µg/m³",
+                datetime_last="2026-09-21T08:00:00Z",
+            )
+        ],
     )
 
     chosen = select_pm25_sensor(parsed)
@@ -174,7 +255,7 @@ def test_sensor_model_normalizes_pm25_alias_before_selection():
     assert chosen.parameter == "pm25"
 
 
-def test_sensor_selection_uses_lowest_id_for_equal_or_missing_timestamps():
+def test_sensor_selection_uses_lowest_id_for_equal_timestamps():
     [equal_dates] = valid_indonesia_locations(
         [
             location(
@@ -185,9 +266,12 @@ def test_sensor_selection_uses_lowest_id_for_equal_or_missing_timestamps():
             )
         ]
     )
+    assert select_pm25_sensor(equal_dates).id == 11
+
+
+def test_sensor_selection_returns_none_when_all_pm25_timestamps_are_missing():
     [missing_dates] = valid_indonesia_locations(
         [location(sensors=[sensor(14), sensor(13)])]
     )
 
-    assert select_pm25_sensor(equal_dates).id == 11
-    assert select_pm25_sensor(missing_dates).id == 13
+    assert select_pm25_sensor(missing_dates) is None

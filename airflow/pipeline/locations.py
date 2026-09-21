@@ -114,7 +114,9 @@ def valid_indonesia_locations(rows: Iterable[Mapping[str, Any]]) -> list[Locatio
 
 def select_pm25_sensor(location: Location) -> Sensor | None:
     candidates = [
-        sensor for sensor in location.sensors if sensor.parameter == "pm25"
+        sensor
+        for sensor in location.sensors
+        if sensor.parameter == "pm25" and sensor.datetime_last is not None
     ]
     if not candidates:
         return None
@@ -122,8 +124,5 @@ def select_pm25_sensor(location: Location) -> Sensor | None:
     candidates.sort(key=lambda sensor: sensor.id)
     return max(
         candidates,
-        key=lambda sensor: (
-            sensor.datetime_last is not None,
-            sensor.datetime_last,
-        ),
+        key=lambda sensor: sensor.datetime_last,
     )
