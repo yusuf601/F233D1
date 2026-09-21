@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 import requests
 
-from pipeline.exceptions import AuthenticationError, SchemaError
+from pipeline.exceptions import AuthenticationError, OpenAQError, SchemaError
 
 
 FIXTURE_PATH = Path(__file__).parent / "fixtures" / "locations-page.json"
@@ -95,22 +95,44 @@ def test_response_without_results_list_raises_schema_error(client, responses, pa
         client.list_locations(parameters_id=2)
 
 
-def test_http_error_does_not_disclose_authentication_details(client, responses):
+def test_http_error_has_no_request_response_or_secret_details(client, responses):
     api_key = client.session.headers["X-API-Key"]
+    response_secret = "FAKE_RESPONSE_BODY_SECRET_SENTINEL"
     responses.add(
         responses.GET,
         client.url("/v3/locations"),
-        body=api_key,
+        body=response_secret,
         status=400,
     )
 
-    with pytest.raises(requests.HTTPError) as exc_info:
+    with pytest.raises(OpenAQError, match="OpenAQ request failed") as exc_info:
         client.list_locations(parameters_id=2)
 
-    message = str(exc_info.value)
-    assert api_key not in message
-    assert "X-API-Key" not in message
+    error = exc_info.value
+    assert getattr(error, "request", None) is None
+    assert getattr(error, "response", None) is None
+    assert api_key not in repr(error)
+    assert response_secret not in repr(error)
+    assert error.__cause__ is None
     assert len(responses.calls) == 1
+
+
+def test_transport_error_is_sanitized(client, responses):
+    transport_secret = "FAKE_TRANSPORT_SECRET_SENTINEL"
+    responses.add(
+        responses.GET,
+        client.url("/v3/locations"),
+        body=requests.ConnectionError(transport_secret),
+    )
+
+    with pytest.raises(OpenAQError, match="OpenAQ request failed") as exc_info:
+        client.list_locations(parameters_id=2)
+
+    error = exc_info.value
+    assert getattr(error, "request", None) is None
+    assert getattr(error, "response", None) is None
+    assert transport_secret not in repr(error)
+    assert error.__cause__ is None
 
 
 def test_latest_pages_until_a_short_result(client, responses):

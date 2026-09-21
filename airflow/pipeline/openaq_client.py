@@ -9,7 +9,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from pipeline.exceptions import AuthenticationError, SchemaError
+from pipeline.exceptions import AuthenticationError, OpenAQError, SchemaError
 
 
 class OpenAQClient:
@@ -35,10 +35,13 @@ class OpenAQClient:
         return f"{self.BASE_URL}{path}"
 
     def _get(self, path: str, params: dict[str, object]) -> dict[str, Any]:
-        response = self.session.get(self.url(path), params=params, timeout=(5, 30))
-        if response.status_code in {401, 403}:
-            raise AuthenticationError("OpenAQ authentication failed")
-        response.raise_for_status()
+        try:
+            response = self.session.get(self.url(path), params=params, timeout=(5, 30))
+            if response.status_code in {401, 403}:
+                raise AuthenticationError("OpenAQ authentication failed")
+            response.raise_for_status()
+        except requests.RequestException:
+            raise OpenAQError("OpenAQ request failed") from None
 
         try:
             payload = response.json()

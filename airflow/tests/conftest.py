@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import uuid
 from pathlib import Path
 
 import pytest
@@ -17,7 +16,7 @@ from pipeline.openaq_client import OpenAQClient
 
 @pytest.fixture
 def client() -> OpenAQClient:
-    return OpenAQClient(api_key=uuid.uuid4().hex)
+    return OpenAQClient(api_key="FAKE_API_KEY_SENTINEL")
 
 
 @pytest.fixture
