@@ -26,3 +26,11 @@ TDD was not required for this configuration/scaffolding task, and no product tes
 ## Self-review and concerns
 
 The required scripts and configuration match the brief. The test command is intentionally present but currently has no test files, so Vitest reports no tests; downstream feature tasks can add tests.
+
+## Fix round 1
+
+Review finding addressed: ESLint now applies the TypeScript parser and `@typescript-eslint` recommended baseline rules to `**/*.{ts,tsx}` files while continuing to ignore `dist`.
+
+Verification command: `npm run lint && npm run typecheck && npm run build`
+
+Result: all commands passed. Vite reported `✓ built in 287ms` and emitted `frontend/dist/index.html`.
