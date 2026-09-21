@@ -105,6 +105,30 @@ it('connects keyboard search and Indonesia focus to the map and station details'
   expect(mapApi.constructor).toHaveBeenCalledTimes(1)
 })
 
+it('separates floating map controls from the persistent station explorer', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => ({
+    ok: true, status: 200, json: async () => validFiles[String(input)],
+  })))
+  window.history.pushState({}, '', '/map')
+
+  render(<App />)
+
+  await waitFor(() => expect(mapApi.constructor).toHaveBeenCalledTimes(1))
+  act(() => emit('load'))
+
+  const controls = screen.getByRole('group', { name: 'Map controls' })
+  expect(controls).toContainElement(screen.getByRole('searchbox'))
+  expect(controls).toContainElement(
+    screen.getByRole('button', { name: 'Focus Indonesia' }),
+  )
+
+  const explorer = screen.getByRole('complementary', {
+    name: 'Station explorer',
+  })
+  expect(explorer).toHaveTextContent('Explore the PM2.5 network')
+  expect(explorer).toHaveTextContent('3 monitored stations')
+})
+
 it('keeps search and details available when WebGL is unsupported', () => {
   vi.stubGlobal('WebGLRenderingContext', undefined)
   render(<StationMap data={data} onSelect={() => {}} target={null} />)

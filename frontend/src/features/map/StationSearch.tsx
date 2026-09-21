@@ -11,40 +11,40 @@ export function StationSearch({ stations, onSelect }: {
   const results = searchStations(stations, query)
 
   return (
-    <div className="min-w-0">
-      <label className="mb-2 block text-sm font-semibold" htmlFor={id}>Search stations</label>
+    <div className="station-search">
+      <label className="sr-only" htmlFor={id}>Search stations</label>
       <input
         id={id}
         type="search"
         value={query}
         onChange={(event) => setQuery(event.target.value)}
         placeholder="Station name or country"
-        className="w-full rounded-md border border-[var(--color-border)] bg-white px-3 py-3"
+        className="station-search__input"
         aria-describedby={`${id}-hint`}
       />
-      <p id={`${id}-hint`} className="mt-2 text-xs text-[var(--color-text-muted)]">
+      <p id={`${id}-hint`} className="sr-only">
         Search the network. Up to ten matching stations are shown.
       </p>
       {query.trim() && (
-        <>
-          <p role="status" className="mt-3 text-sm text-[var(--color-text-muted)]">
+        <div className="station-search__popover">
+          <p role="status" className="station-search__status">
             {results.length ? `${results.length} matching stations` : 'No stations found. Try another station or country.'}
           </p>
-          <ul aria-label="Station search results" className="mt-2 divide-y divide-[var(--color-border)]">
+          <ul aria-label="Station search results" className="station-search__results">
             {results.map((station) => (
               <li key={station.properties.stationId}>
                 <button
                   type="button"
                   onClick={() => onSelect(station)}
-                  className="w-full cursor-pointer px-2 py-3 text-left hover:bg-[var(--color-pm25-soft)]"
+                  className="station-search__result"
                 >
-                  <span className="block font-medium">{station.properties.name}</span>
-                  <span className="text-sm text-[var(--color-text-muted)]">{station.properties.countryName}</span>
+                  <span>{station.properties.name}</span>
+                  <small>{station.properties.countryName}</small>
                 </button>
               </li>
             ))}
           </ul>
-        </>
+        </div>
       )}
     </div>
   )

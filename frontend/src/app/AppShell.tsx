@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useDashboardData } from '../data/DashboardDataProvider'
 import { ErrorScreen } from './ErrorScreen'
 import { LoadingScreen } from './LoadingScreen'
@@ -14,6 +14,7 @@ function formatPublicationTime(value: string): string {
 
 export function AppShell() {
   const dashboard = useDashboardData()
+  const location = useLocation()
   const mainContent = useRef<HTMLElement>(null)
 
   if (dashboard.status === 'loading') return <LoadingScreen />
@@ -61,7 +62,7 @@ export function AppShell() {
       <main
         id="main-content"
         ref={mainContent}
-        className="app-content"
+        className={location.pathname === '/map' ? 'app-content app-content--map' : 'app-content'}
         tabIndex={-1}
       >
         <Outlet />
