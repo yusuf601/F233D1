@@ -1,0 +1,109 @@
+{
+  "meta": {
+    "name": "openaq-api",
+    "website": "https://api.openaq.org",
+    "page": 1,
+    "limit": 2,
+    "found": 2
+  },
+  "results": [
+    {
+      "id": 101,
+      "name": "Jakarta Central",
+      "locality": "Jakarta",
+      "timezone": "Asia/Jakarta",
+      "country": {
+        "id": 77,
+        "code": "ID",
+        "name": "Indonesia"
+      },
+      "owner": {
+        "id": 1,
+        "name": "Example Owner"
+      },
+      "provider": {
+        "id": 1,
+        "name": "Example Provider"
+      },
+      "isMobile": false,
+      "isMonitor": true,
+      "instruments": [],
+      "sensors": [
+        {
+          "id": 501,
+          "name": "pm25 sensor",
+          "parameter": {
+            "id": 2,
+            "name": "pm25",
+            "units": "µg/m³",
+            "displayName": "PM2.5"
+          }
+        }
+      ],
+      "coordinates": {
+        "latitude": -6.2088,
+        "longitude": 106.8456
+      },
+      "licenses": [],
+      "bounds": [106.8456, -6.2088, 106.8456, -6.2088],
+      "distance": null,
+      "datetimeFirst": {
+        "utc": "2026-01-01T00:00:00Z",
+        "local": "2026-01-01T07:00:00+07:00"
+      },
+      "datetimeLast": {
+        "utc": "2026-09-21T00:00:00Z",
+        "local": "2026-09-21T07:00:00+07:00"
+      }
+    },
+    {
+      "id": 102,
+      "name": "Bali South",
+      "locality": "Denpasar",
+      "timezone": "Asia/Makassar",
+      "country": {
+        "id": 77,
+        "code": "ID",
+        "name": "Indonesia"
+      },
+      "owner": {
+        "id": 2,
+        "name": "Example Owner Two"
+      },
+      "provider": {
+        "id": 2,
+        "name": "Example Provider Two"
+      },
+      "isMobile": false,
+      "isMonitor": true,
+      "instruments": [],
+      "sensors": [
+        {
+          "id": 502,
+          "name": "pm25 sensor",
+          "parameter": {
+            "id": 2,
+            "name": "pm25",
+            "units": "µg/m³",
+            "displayName": "PM2.5"
+          }
+        }
+      ],
+      "coordinates": {
+        "latitude": -8.6705,
+        "longitude": 115.2126
+      },
+      "licenses": [],
+      "bounds": [115.2126, -8.6705, 115.2126, -8.6705],
+      "distance": null,
+      "datetimeFirst": {
+        "utc": "2026-01-01T00:00:00Z",
+        "local": "2026-01-01T08:00:00+08:00"
+      },
+      "datetimeLast": {
+        "utc": "2026-09-21T00:00:00Z",
+        "local": "2026-09-21T08:00:00+08:00"
+      }
+    }
+  ]
+}
