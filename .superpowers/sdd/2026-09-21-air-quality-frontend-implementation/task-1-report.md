@@ -34,3 +34,11 @@ Review finding addressed: ESLint now applies the TypeScript parser and `@typescr
 Verification command: `npm run lint && npm run typecheck && npm run build`
 
 Result: all commands passed. Vite reported `✓ built in 287ms` and emitted `frontend/dist/index.html`.
+
+## Fix round 2
+
+Review finding addressed: ESLint now includes `eslint-plugin-react` and `eslint-plugin-react-hooks` with React JSX and Hooks baseline rules for TSX sources. ESLint was aligned to v9 because the current React plugin peer range does not support ESLint 10.
+
+Verification command: `npm run lint && npm run typecheck && npm run build`
+
+Result: all commands passed; the production build completed successfully and emitted `frontend/dist/index.html`.
