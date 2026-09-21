@@ -42,16 +42,19 @@ it('shows no-results feedback and caps the visible results at ten', async () => 
 
 it('shows Indonesia measurement metadata and links to the station statistics', () => {
   render(<MemoryRouter><StationDetail station={joinLatest(stations[0], lookup)} /></MemoryRouter>)
-  expect(screen.getByText(/18.2/)).toHaveTextContent('18.2 µg/m³')
+  expect(screen.getByText('Value').nextElementSibling).toHaveTextContent('18.2')
+  expect(screen.getByText('Unit').nextElementSibling).toHaveTextContent('µg/m³')
   expect(screen.getByText('Fresh')).toBeVisible()
   expect(screen.getByText('OpenAQ test provider')).toBeVisible()
   expect(document.querySelector('time')).toHaveAttribute('datetime', '2026-09-20T23:00:00Z')
   expect(screen.getByRole('link', { name: /statistics/i })).toHaveAttribute('href', '/indonesia?station=101')
 })
 
-it('labels unavailable Indonesia readings without substituting zero', () => {
+it('labels unavailable Indonesia values while keeping the measurement unit visible', () => {
   render(<MemoryRouter><StationDetail station={joinLatest(stations[1], lookup)} /></MemoryRouter>)
-  expect(screen.getByText(/no latest measurement/i)).toBeVisible()
+  expect(screen.getByText('Value').nextElementSibling).toHaveTextContent('No latest measurement available')
+  expect(screen.getByText('Unit').nextElementSibling).toHaveTextContent('µg/m³')
+  expect(screen.getByText('µg/m³')).toBeVisible()
   expect(screen.getByText('Freshness').nextElementSibling).toHaveTextContent('Unavailable')
   expect(document.querySelector('time')).toBeNull()
   expect(screen.getByRole('link')).toHaveAttribute('href', '/indonesia?station=102')
