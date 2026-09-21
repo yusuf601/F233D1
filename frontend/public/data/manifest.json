@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "datasetVersion": "2026-09-21T00:00:00Z",
+  "generatedAt": "2026-09-21T00:00:00Z",
+  "sourceName": "OpenAQ",
+  "dataStatus": {
+    "global": "complete",
+    "latestIndonesia": "partial",
+    "historyIndonesia": "complete",
+    "comparisonIndonesia": "complete"
+  },
+  "counts": {
+    "globalStations": 2,
+    "indonesiaStations": 2,
+    "indonesiaLatest": {
+      "fresh": 1,
+      "stale": 0,
+      "unavailable": 1,
+      "failure": 0
+    }
+  },
+  "files": {
+    "global": "/data/global-stations.json",
+    "latestIndonesia": "/data/indonesia-latest.json",
+    "historyIndonesia": "/data/indonesia-history-30d.json",
+    "comparisonIndonesia": "/data/indonesia-comparison.json"
+  }
+}

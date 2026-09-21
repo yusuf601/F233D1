@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "datasetVersion": "2026-09-21T00:00:00Z",
+  "startDate": "2026-08-23",
+  "endDate": "2026-09-21",
+  "stations": [
+    {
+      "stationId": 101,
+      "stationName": "Jakarta Central",
+      "sensorId": 1001,
+      "unit": "µg/m³",
+      "points": [
+        { "date": "2026-09-19", "mean": 12.1, "sampleCount": 20, "coveragePercent": 83.33 },
+        { "date": "2026-09-21", "mean": 15.4, "sampleCount": 18, "coveragePercent": 75 }
+      ]
+    },
+    {
+      "stationId": 102,
+      "stationName": "Denpasar South",
+      "sensorId": 1002,
+      "unit": "µg/m³",
+      "points": []
+    }
+  ]
+}

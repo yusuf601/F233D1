@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "datasetVersion": "2026-09-21T00:00:00Z",
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [106.8456, -6.2088] },
+      "properties": {
+        "stationId": 101,
+        "name": "Jakarta Central",
+        "countryCode": "ID",
+        "countryName": "Indonesia",
+        "hasPm25": true
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [-0.1276, 51.5072] },
+      "properties": {
+        "stationId": 202,
+        "name": "London Central",
+        "countryCode": "GB",
+        "countryName": "United Kingdom",
+        "hasPm25": true
+      }
+    }
+  ]
+}

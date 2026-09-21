@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "datasetVersion": "2026-09-21T00:00:00Z",
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [106.8456, -6.2088] },
+      "properties": {
+        "stationId": 101,
+        "name": "Jakarta Central",
+        "countryCode": "ID",
+        "countryName": "Indonesia",
+        "selectedSensorId": 1001,
+        "value": 18.2,
+        "unit": "µg/m³",
+        "measuredAt": "2026-09-20T23:00:00Z",
+        "provider": "OpenAQ test provider",
+        "status": "fresh"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": { "type": "Point", "coordinates": [115.2167, -8.65] },
+      "properties": {
+        "stationId": 102,
+        "name": "Denpasar South",
+        "countryCode": "ID",
+        "countryName": "Indonesia",
+        "selectedSensorId": 1002,
+        "value": null,
+        "unit": "µg/m³",
+        "measuredAt": null,
+        "provider": "OpenAQ test provider",
+        "status": "unavailable"
+      }
+    }
+  ]
+}
