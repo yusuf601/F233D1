@@ -6,8 +6,11 @@ transformation models stay independent of that wire contract.
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from dataclasses import dataclass
 from datetime import date, datetime
+from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import (
@@ -36,6 +39,16 @@ Number = Annotated[StrictFloat, Field(allow_inf_nan=False)]
 Percentage = Annotated[Number, Field(ge=0, le=100)]
 Status = Literal["fresh", "stale", "unavailable"]
 Completeness = Literal["complete", "partial", "unavailable"]
+
+PUBLIC_OUTPUT_FILES = frozenset(
+    {
+        "manifest.json",
+        "global-stations.json",
+        "indonesia-latest.json",
+        "indonesia-history-30d.json",
+        "indonesia-comparison.json",
+    }
+)
 
 
 class ContractModel(BaseModel):
@@ -343,3 +356,80 @@ def build_outputs(dataset: OutputDataset) -> dict[str, bytes]:
         "manifest.json": ManifestFile(**header, generatedAt=_iso(dataset.generated_at), sourceName="OpenAQ", dataStatus=statuses, counts={"globalStations": len(inventory), "indonesiaStations": len(snapshots), "indonesiaLatest": counts}, files={"global": "/data/global-stations.json", "latestIndonesia": "/data/indonesia-latest.json", "historyIndonesia": "/data/indonesia-history-30d.json", "comparisonIndonesia": "/data/indonesia-comparison.json"}),
     }
     return {name: encode_json(model.model_dump(mode="json", by_alias=True)) for name, model in files.items()}
+
+
+def _reject_nonfinite_constant(value: str):
+    raise ValueError("non-finite JSON number")
+
+
+def validate_output_payloads(outputs: dict[str, bytes]) -> dict[str, bytes]:
+    """Reject incomplete or malformed public output before it can be published."""
+    if set(outputs) != PUBLIC_OUTPUT_FILES:
+        raise ValueError("public output files must contain exactly five contract files")
+
+    models = {
+        "manifest.json": ManifestFile,
+        "global-stations.json": GlobalFile,
+        "indonesia-latest.json": LatestFile,
+        "indonesia-history-30d.json": HistoryFile,
+        "indonesia-comparison.json": ComparisonFile,
+    }
+    validated: dict[str, bytes] = {}
+    for name, model in models.items():
+        payload = outputs[name]
+        if not isinstance(payload, bytes):
+            raise ValueError("public output payload must be bytes")
+        try:
+            decoded = json.loads(payload, parse_constant=_reject_nonfinite_constant)
+            model.model_validate(decoded)
+        except (TypeError, ValueError):
+            raise ValueError("public output failed contract validation") from None
+        validated[name] = payload
+    return validated
+
+
+def load_validated_outputs(path: Path | str) -> dict[str, bytes]:
+    """Load the exact output tree without passing its content through XCom."""
+    directory = Path(path)
+    try:
+        entries = {item.name: item for item in directory.iterdir()}
+    except OSError:
+        raise ValueError("public output directory was unavailable") from None
+    if set(entries) != PUBLIC_OUTPUT_FILES or not all(item.is_file() for item in entries.values()):
+        raise ValueError("public output files must contain exactly five contract files")
+    try:
+        return validate_output_payloads(
+            {name: entries[name].read_bytes() for name in PUBLIC_OUTPUT_FILES}
+        )
+    except OSError:
+        raise ValueError("public output files could not be read") from None
+
+
+def _atomic_write(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(payload)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def copy_validated_outputs(source: Path | str, destination: Path | str) -> dict[str, str]:
+    """Atomically refresh each public file after validating the entire source tree."""
+    outputs = load_validated_outputs(source)
+    target = Path(destination)
+    for name in sorted(PUBLIC_OUTPUT_FILES):
+        _atomic_write(target / name, outputs[name])
+    for entry in target.iterdir():
+        if entry.name not in PUBLIC_OUTPUT_FILES:
+            if entry.is_dir():
+                raise ValueError("public output directory contains an unexpected directory")
+            entry.unlink()
+    return {"status": "dry-run", "output_path": str(target)}
