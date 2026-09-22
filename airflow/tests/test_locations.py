@@ -88,6 +88,20 @@ def test_global_inventory_omits_rows_without_required_identity_coordinates_or_pm
     assert [station.id for station in stations] == [105]
 
 
+@pytest.mark.parametrize("invalid_country", ["-99", "-9", "id", ""])
+def test_global_inventory_omits_invalid_country_code_without_aborting_page(
+    invalid_country,
+):
+    rows = [
+        location(location_id=101, country=invalid_country),
+        location(location_id=102, country="US"),
+    ]
+
+    stations = normalize_global_locations(rows)
+
+    assert [station.id for station in stations] == [102]
+
+
 def test_rejects_wrong_country_inside_indonesia_bounds():
     row = location(country="SG", latitude=-6.2, longitude=106.8)
     assert valid_indonesia_locations([row]) == []

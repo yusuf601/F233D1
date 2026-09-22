@@ -63,7 +63,7 @@ class Sensor(BaseModel):
 class Location(BaseModel):
     id: int = Field(strict=True, gt=0)
     name: str = Field(min_length=1)
-    country_code: str = Field(min_length=1)
+    country_code: str = Field(pattern=r"^[A-Z]{2}$")
     coordinates: Coordinates
     sensors: list[Sensor]
 
@@ -71,5 +71,5 @@ class Location(BaseModel):
 class GlobalStation(BaseModel):
     id: int = Field(strict=True, gt=0)
     name: str = Field(min_length=1)
-    country_code: str = Field(min_length=1)
+    country_code: str = Field(pattern=r"^[A-Z]{2}$")
     coordinates: Coordinates
