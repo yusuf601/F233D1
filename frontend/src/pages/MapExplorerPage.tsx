@@ -24,35 +24,64 @@ export function MapExplorerPage() {
   if (!mapData) return null
 
   return (
-    <section className="page" aria-labelledby="map-page-title">
-      <header className="page-heading">
-        <p className="eyebrow">Global station network</p>
-        <h1 id="map-page-title">Global Air Quality Map</h1>
-        <p>
-          Explore stations monitoring PM2.5 around the world, then focus on Indonesia
-          for published measurements.
-        </p>
-      </header>
-      <div className="map-workspace" aria-label="Map workspace">
-        <div className="min-w-0">
+    <section className="map-explorer" aria-labelledby="map-page-title">
+      <h1 id="map-page-title" className="sr-only">Global Air Quality Map</h1>
+
+      <div className="map-explorer__stage">
+        <div className="map-explorer__canvas">
           <StationMap data={mapData} target={target} onSelect={(id) => {
             const station = stationLookup.get(id)
             if (station) selectStation(station)
           }} />
-          <p className="mt-3 text-sm text-[var(--color-text-muted)]">
-            {mapData.features.length.toLocaleString('en')} PM2.5 monitoring stations · Cluster numbers show station counts, not pollution levels.
-          </p>
         </div>
-        <aside aria-label="Explore stations" className="min-w-0 rounded-lg border border-[var(--color-border)] bg-white p-5">
+
+        <div className="map-controls" role="group" aria-label="Map controls">
           <StationSearch stations={mapData.features} onSelect={selectStation} />
-          <button type="button" onClick={() => setTarget({ kind: 'indonesia' })} className="mt-5 w-full cursor-pointer rounded-md bg-[var(--color-pm25)] px-4 py-3 font-semibold text-white">
-            Focus Indonesia
-          </button>
-          {selected ? <StationDetail station={joinLatest(selected, latestLookup)} /> : (
-            <p className="mt-6 text-sm leading-relaxed text-[var(--color-text-muted)]">Select a station on the map or search by station and country to see its details.</p>
-          )}
-        </aside>
+          <div className="map-controls__actions">
+            <button
+              type="button"
+              onClick={() => setTarget({ kind: 'indonesia' })}
+              className="map-controls__focus"
+            >
+              Focus Indonesia
+            </button>
+            <span className="map-controls__count">
+              {mapData.features.length.toLocaleString('en')} stations
+            </span>
+          </div>
+        </div>
+
+        <p className="map-explorer__legend">
+          Cluster numbers show station counts, not pollution levels.
+        </p>
       </div>
+
+      <aside aria-label="Station explorer" className="station-explorer">
+        {selected ? <StationDetail station={joinLatest(selected, latestLookup)} /> : (
+          <div className="station-explorer__intro">
+            <p className="eyebrow">PM2.5 network</p>
+            <h2>Explore the PM2.5 network</h2>
+            <p>
+              Search by station or country, or select a point on the map to inspect
+              the monitoring location.
+            </p>
+            <dl className="station-explorer__summary">
+              <div>
+                <dt>Network</dt>
+                <dd>{mapData.features.length.toLocaleString('en')} monitored stations</dd>
+              </div>
+              <div>
+                <dt>Pollutant</dt>
+                <dd>PM2.5</dd>
+              </div>
+              <div>
+                <dt>Latest data</dt>
+                <dd>Indonesia only</dd>
+              </div>
+            </dl>
+          </div>
+        )}
+      </aside>
     </section>
   )
 }

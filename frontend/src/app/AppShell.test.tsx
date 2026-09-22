@@ -42,6 +42,15 @@ describe('App shell', () => {
     expect(window.location.pathname).toBe('/map')
   })
 
+  it('keeps the fullscreen map shell on a trailing-slash route', async () => {
+    renderApp('/map/')
+
+    expect(
+      await screen.findByRole('heading', { name: /global air quality map/i }),
+    ).toBeTruthy()
+    expect(screen.getByRole('main')).toHaveClass('app-content--map')
+  })
+
   it('keeps statistics on a separate route with persistent navigation', async () => {
     renderApp('/map')
 

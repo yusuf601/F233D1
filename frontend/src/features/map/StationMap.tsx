@@ -122,10 +122,10 @@ export function StationMap({ data, onSelect, target }: {
   }, [target, ready])
 
   return (
-    <div className="relative min-w-0 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-pm25-soft)]">
-      <div ref={container} role="region" aria-label="Global station map" className="h-[65vh] min-h-96 w-full" />
+    <div className="station-map">
+      <div ref={container} role="region" aria-label="Global station map" className="station-map__canvas" />
       {(error || !ready) && (
-        <p role="status" className="absolute top-3 right-3 left-3 rounded bg-white p-3 text-sm shadow-sm">
+        <p role="status" className="station-map__status">
           {error ?? 'Loading station map…'}
         </p>
       )}

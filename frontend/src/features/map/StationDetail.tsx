@@ -9,15 +9,15 @@ const STATUS_LABEL = {
 
 export function StationDetail({ station }: { station: ReturnType<typeof joinLatest> }) {
   return (
-    <section aria-label="Selected station" aria-live="polite" className="mt-6 border-t border-[var(--color-border)] pt-6">
+    <section aria-label="Selected station" aria-live="polite" className="station-detail">
       <p className="eyebrow">Selected station</p>
-      <h2 className="text-xl font-semibold">{station.name}</h2>
-      <p className="mt-1 text-sm text-[var(--color-text-muted)]">{station.countryName} · Station {station.stationId}</p>
+      <h2>{station.name}</h2>
+      <p className="station-detail__meta">{station.countryName} · Station {station.stationId}</p>
       {station.isIndonesia ? (
         <>
-          <dl className="my-5 grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 text-sm">
+          <dl className="station-detail__data">
             <dt>Value</dt>
-            <dd className={station.latestValue === null ? 'text-base' : 'text-3xl font-semibold'}>
+            <dd className={station.latestValue === null ? '' : 'station-detail__value'}>
               {station.latestValue ?? 'No latest measurement available'}
             </dd>
             <dt>Unit</dt><dd>{station.unit ?? 'Unavailable'}</dd>
@@ -35,12 +35,12 @@ export function StationDetail({ station }: { station: ReturnType<typeof joinLate
             ) : 'Unavailable'}</dd>
             <dt>Provider</dt><dd>{station.provider ?? 'Unavailable'}</dd>
           </dl>
-          <Link className="inline-block font-semibold text-[var(--color-pm25)] underline underline-offset-4" to={`/indonesia?station=${station.stationId}`}>
+          <Link className="station-detail__link" to={`/indonesia?station=${station.stationId}`}>
             View Indonesia statistics →
           </Link>
         </>
       ) : (
-        <p className="mt-5 text-sm leading-relaxed text-[var(--color-text-muted)]">
+        <p className="station-detail__scope">
           PM2.5 monitoring is available at this station. Latest readings and history are outside this dashboard’s scope.
         </p>
       )}
