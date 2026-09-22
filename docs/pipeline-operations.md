@@ -86,7 +86,6 @@ mismatch, non-finite number, or a known configured credential in the output:
 python - <<'PY'
 import json
 import math
-import os
 from pathlib import Path
 
 root = Path("frontend/public/data")
@@ -97,25 +96,63 @@ names = {
     "indonesia-history-30d.json",
     "indonesia-comparison.json",
 }
-assert {path.name for path in root.iterdir() if path.is_file()} == names
-payloads = {name: json.loads((root / name).read_text()) for name in names}
-versions = {payload["datasetVersion"] for payload in payloads.values()}
-assert len(versions) == 1 and next(iter(versions))
-assert all(payload["schemaVersion"] == 1 for payload in payloads.values())
+
+def fail(message):
+    raise SystemExit(f"validation failed: {message}")
+
+def configured_secrets(path):
+    values = set()
+    try:
+        lines = path.read_text().splitlines()
+    except OSError:
+        fail("could not read local .env")
+    for line in lines:
+        if not line or line.lstrip().startswith("#"):
+            continue
+        key, separator, value = line.partition("=")
+        if separator and key.strip() in {"OPENAQ_API_KEY", "GITHUB_DATA_TOKEN"}:
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+                value = value[1:-1]
+            if value:
+                values.add(value)
+    return values
+
+try:
+    entries = {path.name: path for path in root.iterdir()}
+except OSError:
+    fail("could not read frontend/public/data")
+if set(entries) != names:
+    fail("output directory does not contain exactly five expected entries")
+if any(not path.is_file() or path.is_symlink() for path in entries.values()):
+    fail("expected output entry is not a regular file")
+
+try:
+    payloads = {name: json.loads(entries[name].read_text()) for name in names}
+    versions = {payload["datasetVersion"] for payload in payloads.values()}
+    if len(versions) != 1 or not next(iter(versions)):
+        fail("datasetVersion is missing or inconsistent")
+    if not all(payload["schemaVersion"] == 1 for payload in payloads.values()):
+        fail("schemaVersion is invalid")
+except (OSError, TypeError, ValueError, KeyError):
+    fail("output JSON is invalid")
 
 def walk(value):
     if isinstance(value, float):
-        assert math.isfinite(value), "non-finite JSON number"
+        if not math.isfinite(value):
+            fail("output contains a non-finite number")
     elif isinstance(value, dict):
-        for item in value.values(): walk(item)
+        for item in value.values():
+            walk(item)
     elif isinstance(value, list):
-        for item in value: walk(item)
+        for item in value:
+            walk(item)
 
-for payload in payloads.values(): walk(payload)
-rendered = "\n".join(json.dumps(value) for value in payloads.values())
-for name in ("OPENAQ_API_KEY", "GITHUB_DATA_TOKEN"):
-    value = os.environ.get(name, "").strip()
-    assert not value or value not in rendered, f"secret {name} found in output"
+for payload in payloads.values():
+    walk(payload)
+rendered = [json.dumps(payload, ensure_ascii=False) for payload in payloads.values()]
+if any(secret in payload for secret in configured_secrets(Path(".env")) for payload in rendered):
+    fail("configured credential found in output")
 print("validated five files for dataset", next(iter(versions)))
 PY
 ```
