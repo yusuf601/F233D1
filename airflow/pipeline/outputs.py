@@ -405,6 +405,34 @@ def load_validated_outputs(path: Path | str) -> dict[str, bytes]:
         raise ValueError("public output files could not be read") from None
 
 
+def write_validated_outputs_directory(directory: Path | str, outputs: dict[str, bytes]) -> str:
+    """Write a staged output tree, or safely reuse the identical completed tree."""
+    validated = validate_output_payloads(outputs)
+    staging = Path(directory)
+    staging.mkdir(parents=True, exist_ok=True)
+    final = staging / "outputs"
+    if final.exists():
+        try:
+            existing = load_validated_outputs(final)
+        except ValueError:
+            raise ValueError("staged output directory was invalid") from None
+        if existing != validated:
+            raise ValueError("staged output directory did not match this run")
+        return str(final)
+
+    temporary = Path(tempfile.mkdtemp(prefix=".outputs-", dir=staging))
+    try:
+        for name, payload in validated.items():
+            _atomic_write(temporary / name, payload)
+        temporary.replace(final)
+    finally:
+        if temporary.exists():
+            for child in temporary.iterdir():
+                child.unlink()
+            temporary.rmdir()
+    return str(final)
+
+
 def _atomic_write(path: Path, payload: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     descriptor, temporary_name = tempfile.mkstemp(

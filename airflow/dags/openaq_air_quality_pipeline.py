@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Mapping
@@ -26,6 +25,7 @@ from pipeline.outputs import (
     copy_validated_outputs,
     encode_json,
     load_validated_outputs,
+    write_validated_outputs_directory,
 )
 from pipeline.transform import (
     HISTORY_DURATION,
@@ -156,24 +156,6 @@ def _latest_station(
         measured_at=None,
         unit=unit,
     )
-
-
-def _write_outputs_directory(directory: Path, outputs: dict[str, bytes]) -> str:
-    temporary = directory / f".outputs-{uuid.uuid4().hex}"
-    final = directory / "outputs"
-    temporary.mkdir()
-    try:
-        for name, payload in outputs.items():
-            atomic_write(temporary / name, payload)
-        if final.exists():
-            raise ValueError("staged output directory already exists")
-        temporary.replace(final)
-    finally:
-        if temporary.exists():
-            for child in temporary.iterdir():
-                child.unlink()
-            temporary.rmdir()
-    return str(final)
 
 
 @task
@@ -368,7 +350,7 @@ def build_json(
         end_date=end_date,
         failure_count=int(history_document.get("failure_count", 0)),
     )
-    return _write_outputs_directory(_stage_directory(), build_outputs(dataset))
+    return write_validated_outputs_directory(_stage_directory(), build_outputs(dataset))
 
 
 @task

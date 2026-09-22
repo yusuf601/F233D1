@@ -9,6 +9,7 @@ from pipeline.outputs import (
     PUBLIC_OUTPUT_FILES,
     copy_validated_outputs,
     load_validated_outputs,
+    write_validated_outputs_directory,
 )
 
 
@@ -60,6 +61,44 @@ def test_dry_run_copies_only_the_validated_five_public_outputs(tmp_path: Path):
     assert result == {"status": "dry-run", "output_path": str(destination)}
     assert {path.name for path in destination.iterdir()} == PUBLIC_OUTPUT_FILES
     assert (destination / "manifest.json").read_bytes() == _outputs()["manifest.json"]
+
+
+def test_staged_output_directory_reuses_identical_validated_outputs_on_retry(
+    tmp_path: Path,
+):
+    """Would fail if a retry rejected a completed, identical staged output tree."""
+    staging = tmp_path / "run"
+    staging.mkdir()
+
+    first = write_validated_outputs_directory(staging, _outputs())
+    second = write_validated_outputs_directory(staging, _outputs())
+
+    assert first == second == str(staging / "outputs")
+    assert {entry.name for entry in (staging / "outputs").iterdir()} == PUBLIC_OUTPUT_FILES
+    assert (staging / "outputs" / "manifest.json").read_bytes() == _outputs()["manifest.json"]
+
+
+@pytest.mark.parametrize("mutation", ["invalid", "different"])
+def test_staged_output_directory_rejects_invalid_or_different_retry_tree(
+    tmp_path: Path, mutation: str
+):
+    """Would fail if a retry reused an unsafe or non-idempotent output tree."""
+    staging = tmp_path / "run"
+    staging.mkdir()
+    write_validated_outputs_directory(staging, _outputs())
+    manifest = staging / "outputs" / "manifest.json"
+    if mutation == "invalid":
+        manifest.write_bytes(b"not json\n")
+    else:
+        changed = json.loads(manifest.read_bytes())
+        changed["generatedAt"] = "2026-09-22T00:00:00Z"
+        manifest.write_bytes(json.dumps(changed, separators=(",", ":")).encode() + b"\n")
+    before = manifest.read_bytes()
+
+    with pytest.raises(ValueError, match="staged output"):
+        write_validated_outputs_directory(staging, _outputs())
+
+    assert manifest.read_bytes() == before
 
 
 @pytest.mark.parametrize("mutation", ["missing", "unexpected", "invalid-json"])
