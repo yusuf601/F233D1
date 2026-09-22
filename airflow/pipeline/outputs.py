@@ -10,10 +10,23 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictFloat, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictFloat,
+    ValidationInfo,
+    model_validator,
+)
 
 from .models import Coordinates
-from .transform import ComparisonOutput, LatestStation, StationHistory, _aware_datetime
+from .transform import (
+    ComparisonOutput,
+    LatestStation,
+    StationHistory,
+    _aware_datetime,
+    freshness,
+)
 
 
 Text = Annotated[str, Field(min_length=1)]
@@ -46,7 +59,7 @@ class StationSnapshot(ContractModel):
     provider: Text | None = None
 
     @model_validator(mode="after")
-    def validate_reading(self):
+    def validate_reading(self, info: ValidationInfo):
         if self.station.country_code != "ID":
             raise ValueError("latest and history are Indonesia-only")
         if self.latest.station_id != self.station.id:
@@ -57,6 +70,15 @@ class StationSnapshot(ContractModel):
             self.status != "unavailable" and not (has_value and has_time)
         ):
             raise ValueError("latest status and measurement must agree")
+        generated_at = (info.context or {}).get("generated_at")
+        if (
+            self.status == "fresh"
+            and generated_at is not None
+            and freshness(self.latest.measured_at, generated_at) != "fresh"
+        ):
+            raise ValueError(
+                "fresh measurement must not be future or older than 24 hours"
+            )
         if self.history is not None and (
             self.history.station_id != self.station.id
             or self.history.sensor_id != self.selected_sensor_id
@@ -288,7 +310,12 @@ def build_outputs(dataset: OutputDataset) -> dict[str, bytes]:
     data_status to report upstream partial inventory/history failures.
     """
     header = {"schemaVersion": 1, "datasetVersion": dataset.dataset_version}
-    snapshots = [StationSnapshot.model_validate(item.model_dump()) for item in dataset.indonesia_stations]
+    snapshots = [
+        StationSnapshot.model_validate(
+            item.model_dump(), context={"generated_at": dataset.generated_at}
+        )
+        for item in dataset.indonesia_stations
+    ]
     inventory = [InventoryStation.model_validate(item.model_dump()) for item in dataset.global_stations]
     ids = {item.station.id for item in snapshots}
     if len(ids) != len(snapshots) or len({item.id for item in inventory}) != len(inventory):

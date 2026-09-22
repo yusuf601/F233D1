@@ -95,3 +95,33 @@ def test_failure_count_and_stale_fallback_are_visible(sample_dataset):
     manifest = json.loads(build_outputs(sample_dataset)["manifest.json"])
     assert manifest["counts"]["indonesiaLatest"] == {"fresh": 0, "stale": 1, "unavailable": 1, "failure": 1}
     assert manifest["dataStatus"]["latestIndonesia"] == "partial"
+
+
+@pytest.mark.parametrize(
+    "measured_at",
+    [
+        datetime(2026, 9, 19, tzinfo=UTC),
+        datetime(2026, 9, 21, 0, 0, 1, tzinfo=UTC),
+    ],
+    ids=["older-than-24-hours", "future"],
+)
+def test_build_outputs_rejects_fresh_readings_outside_the_validity_window(
+    sample_dataset, measured_at
+):
+    dataset = copy.deepcopy(sample_dataset)
+    dataset.indonesia_stations[0].latest.measured_at = measured_at
+
+    with pytest.raises(ValueError, match="fresh measurement"):
+        build_outputs(dataset)
+
+
+def test_build_outputs_accepts_fresh_reading_at_exactly_24_hours(sample_dataset):
+    dataset = copy.deepcopy(sample_dataset)
+    dataset.indonesia_stations[0].latest.measured_at = datetime(
+        2026, 9, 20, tzinfo=UTC
+    )
+
+    outputs = build_outputs(dataset)
+
+    latest = json.loads(outputs["indonesia-latest.json"])
+    assert latest["features"][0]["properties"]["status"] == "fresh"
