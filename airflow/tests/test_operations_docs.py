@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -57,6 +58,47 @@ def test_environment_example_is_secret_free_and_disables_publication():
     assert values["OPENAQ_API_KEY"] == ""
     assert values["GITHUB_DATA_TOKEN"] == ""
     assert values["PUBLISH_TO_GITHUB"] == "false"
+
+
+def test_compose_requires_one_shared_api_secret_for_log_access():
+    secret = "test-only-airflow-api-secret"
+    result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            "airflow/docker-compose.yaml",
+            "config",
+            "--format",
+            "json",
+        ],
+        cwd=ROOT,
+        env=os.environ
+        | {
+            "AIRFLOW__API__SECRET_KEY": secret,
+            "FERNET_KEY": "test-only-fernet-key",
+        },
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    services = json.loads(result.stdout)["services"]
+    for service in (
+        "airflow-apiserver",
+        "airflow-scheduler",
+        "airflow-dag-processor",
+        "airflow-worker",
+        "airflow-triggerer",
+    ):
+        assert services[service]["environment"]["AIRFLOW__API__SECRET_KEY"] == secret
+
+
+def test_operations_documents_generate_api_secret_without_printing_it():
+    guide = (ROOT / "docs" / "pipeline-operations.md").read_text()
+
+    assert "AIRFLOW__API__SECRET_KEY" in guide
+    assert 'Path("airflow/.env")' in guide
+    assert "secrets.token_urlsafe" in guide
 
 
 def test_operations_documents_cover_safe_controlled_run():

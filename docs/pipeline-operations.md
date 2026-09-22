@@ -31,6 +31,30 @@ loads `airflow/.env` for Compose substitutions and both `airflow/.env` and the
 root `.env` into Airflow services; keep runtime settings there and credentials
 in the root `.env`.
 
+Create the shared Airflow API secret once before starting or recreating the
+stack. This idempotent command preserves an existing non-empty value and does
+not print the generated secret. The same value is passed to every Airflow
+component so API-server requests for worker logs can be verified.
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+import secrets
+
+path = Path("airflow/.env")
+prefix = "AIRFLOW__API__SECRET_KEY="
+lines = path.read_text().splitlines() if path.exists() else []
+for index, line in enumerate(lines):
+    if line.startswith(prefix):
+        if not line.removeprefix(prefix):
+            lines[index] = prefix + secrets.token_urlsafe(48)
+        break
+else:
+    lines.append(prefix + secrets.token_urlsafe(48))
+path.write_text("\n".join(lines) + "\n")
+PY
+```
+
 ## Build, initialize, start, and trigger
 
 Run these commands from the repository root. The initial `PUBLISH_TO_GITHUB=false`
