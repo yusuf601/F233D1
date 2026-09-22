@@ -46,16 +46,29 @@ class FakeGitHubSession:
         self.events: list[str] = []
         self._ref_conflicts = 0
         self._authentication_failure = False
+        self._truncate_recursive_tree = False
         self._counter = 0
         self.trees: dict[str, dict[str, str]] = {"tree-initial": {}}
         self.commits: dict[str, str] = {"commit-initial": "tree-initial"}
         self.head_commit = "commit-initial"
 
     def seed_matching_tree(self, outputs: dict[str, bytes]) -> None:
-        tree = {f"{PUBLIC_PREFIX}/{name}": git_blob_sha(payload) for name, payload in outputs.items()}
+        tree = {
+            f"{PUBLIC_PREFIX}/{name}": git_blob_sha(payload)
+            for name, payload in outputs.items()
+        }
         self.trees["tree-matching"] = tree
         self.commits["commit-matching"] = "tree-matching"
         self.head_commit = "commit-matching"
+
+    def seed_stale_public_file_and_unrelated_file(self) -> None:
+        self.trees["tree-initial"] = {
+            f"{PUBLIC_PREFIX}/retired.json": "blob-retired",
+            "README.md": "blob-readme",
+        }
+
+    def truncate_recursive_tree(self) -> None:
+        self._truncate_recursive_tree = True
 
     def fail_first_ref_update_with_422(self) -> None:
         self._ref_conflicts = 1
@@ -78,15 +91,21 @@ class FakeGitHubSession:
         if method == "GET" and path.startswith("/git/commits/"):
             return FakeResponse(200, {"tree": {"sha": self.commits[self.head_commit]}})
         if method == "GET" and path.startswith("/git/trees/"):
-            tree_sha = path.rsplit("/", 1)[-1]
+            tree_sha, _, query = path.rpartition("/")[2].partition("?")
+            if query == "recursive=1":
+                entries = [
+                    {"path": item_path, "type": "blob", "sha": sha}
+                    for item_path, sha in self.trees[tree_sha].items()
+                ]
+                return FakeResponse(
+                    200,
+                    {"truncated": self._truncate_recursive_tree, "tree": entries},
+                )
             return FakeResponse(
                 200,
                 {
                     "truncated": False,
-                    "tree": [
-                        {"path": item_path, "type": "blob", "sha": sha}
-                        for item_path, sha in self.trees[tree_sha].items()
-                    ],
+                    "tree": self._non_recursive_tree(tree_sha),
                 },
             )
         if method == "POST" and path == "/git/blobs":
@@ -104,7 +123,11 @@ class FakeGitHubSession:
             self._counter += 1
             tree_sha = f"tree-created-{self._counter}"
             merged = dict(self.trees[body["base_tree"]])
-            merged.update({entry["path"]: entry["sha"] for entry in body["tree"]})
+            for entry in body["tree"]:
+                if entry["sha"] is None:
+                    merged.pop(entry["path"], None)
+                else:
+                    merged[entry["path"]] = entry["sha"]
             self.trees[tree_sha] = merged
             return FakeResponse(201, {"sha": tree_sha})
         if method == "POST" and path == "/git/commits":
@@ -126,6 +149,17 @@ class FakeGitHubSession:
             self.head_commit = body["sha"]
             return FakeResponse(200, {"object": {"sha": self.head_commit}})
         raise AssertionError(f"unexpected GitHub request: {method} {path}")
+
+    def _non_recursive_tree(self, tree_sha: str) -> list[dict[str, str]]:
+        entries: dict[str, dict[str, str]] = {}
+        for item_path, sha in self.trees[tree_sha].items():
+            name, separator, _ = item_path.partition("/")
+            entries[name] = (
+                {"path": name, "type": "tree", "sha": f"tree-{name}"}
+                if separator
+                else {"path": name, "type": "blob", "sha": sha}
+            )
+        return list(entries.values())
 
     def _advance_external_head(self) -> None:
         self._counter += 1
@@ -158,6 +192,62 @@ def test_unchanged_outputs_do_not_create_commit(publisher, github_api):
 
     assert publisher.publish(OUTPUTS).status == "unchanged"
     assert github_api.created_commits == []
+    assert github_api.requests[-1][1].endswith("/git/trees/tree-matching?recursive=1")
+
+
+def test_truncated_recursive_tree_fails_without_creating_git_objects(publisher, github_api):
+    github_api.truncate_recursive_tree()
+
+    with pytest.raises(GitHubPublishError, match="GitHub response was invalid"):
+        publisher.publish(OUTPUTS)
+
+    assert github_api.created_blobs == []
+    assert github_api.created_trees == []
+    assert github_api.created_commits == []
+
+
+@pytest.mark.parametrize(
+    "invalid_outputs",
+    [
+        {**OUTPUTS, "sixth.json": b"{}\n"},
+        {name: payload for name, payload in OUTPUTS.items() if name != "manifest.json"},
+    ],
+)
+def test_publish_rejects_any_mapping_other_than_five_public_files(publisher, github_api, invalid_outputs):
+    with pytest.raises(GitHubPublishError, match="output files were invalid"):
+        publisher.publish(invalid_outputs)
+
+    assert github_api.requests == []
+
+
+def test_publish_deletes_stale_public_file_but_retains_unrelated_files(publisher, github_api):
+    github_api.seed_stale_public_file_and_unrelated_file()
+
+    publisher.publish(OUTPUTS)
+
+    tree_entries = github_api.created_trees[0]["tree"]
+    assert {entry["path"] for entry in tree_entries} == {
+        "frontend/public/data/manifest.json",
+        "frontend/public/data/global-stations.json",
+        "frontend/public/data/indonesia-latest.json",
+        "frontend/public/data/indonesia-history-30d.json",
+        "frontend/public/data/indonesia-comparison.json",
+        "frontend/public/data/retired.json",
+    }
+    assert {
+        "path": "frontend/public/data/retired.json",
+        "mode": "100644",
+        "type": "blob",
+        "sha": None,
+    } in tree_entries
+    assert github_api.trees["tree-created-1"] == {
+        "README.md": "blob-readme",
+        f"{PUBLIC_PREFIX}/manifest.json": git_blob_sha(OUTPUTS["manifest.json"]),
+        f"{PUBLIC_PREFIX}/global-stations.json": git_blob_sha(OUTPUTS["global-stations.json"]),
+        f"{PUBLIC_PREFIX}/indonesia-latest.json": git_blob_sha(OUTPUTS["indonesia-latest.json"]),
+        f"{PUBLIC_PREFIX}/indonesia-history-30d.json": git_blob_sha(OUTPUTS["indonesia-history-30d.json"]),
+        f"{PUBLIC_PREFIX}/indonesia-comparison.json": git_blob_sha(OUTPUTS["indonesia-comparison.json"]),
+    }
 
 
 def test_ref_conflict_reloads_head_and_retries_once(publisher, github_api):

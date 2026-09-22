@@ -10,6 +10,15 @@ import requests
 
 
 PUBLIC_PREFIX = "frontend/public/data"
+PUBLIC_OUTPUT_FILES = frozenset(
+    {
+        "manifest.json",
+        "global-stations.json",
+        "indonesia-latest.json",
+        "indonesia-history-30d.json",
+        "indonesia-comparison.json",
+    }
+)
 
 
 class GitHubPublishError(Exception):
@@ -52,13 +61,20 @@ class GitHubPublisher:
         self.session = session or requests.Session()
 
     def publish(self, outputs: dict[str, bytes]) -> PublishResult:
+        if set(outputs) != PUBLIC_OUTPUT_FILES:
+            raise GitHubPublishError("GitHub output files were invalid")
         for attempt in range(2):
             head = self._head()
-            if self._remote_hashes(head.tree_sha, outputs) == self._content_hashes(outputs):
+            remote_hashes = self._remote_hashes(head.tree_sha)
+            if remote_hashes == self._content_hashes(outputs):
                 return PublishResult(status="unchanged", commit_sha=head.commit_sha)
 
             blobs = {name: self._create_blob(payload) for name, payload in outputs.items()}
-            tree_sha = self._create_tree(head.tree_sha, blobs)
+            tree_sha = self._create_tree(
+                head.tree_sha,
+                blobs,
+                obsolete_paths=set(remote_hashes) - PUBLIC_OUTPUT_FILES,
+            )
             commit_sha = self._create_commit(tree_sha, head.commit_sha)
             if self._update_ref(commit_sha):
                 return PublishResult(status="published", commit_sha=commit_sha)
@@ -74,12 +90,11 @@ class GitHubPublisher:
         tree_sha = self._required_string(commit, "tree", "sha")
         return _Head(commit_sha=commit_sha, tree_sha=tree_sha)
 
-    def _remote_hashes(self, tree_sha: str, outputs: dict[str, bytes]) -> dict[str, str]:
-        payload = self._request("GET", f"/git/trees/{tree_sha}")
+    def _remote_hashes(self, tree_sha: str) -> dict[str, str]:
+        payload = self._request("GET", f"/git/trees/{tree_sha}?recursive=1")
         if payload.get("truncated") is True or not isinstance(payload.get("tree"), list):
             raise GitHubPublishError("GitHub response was invalid")
         prefix = f"{PUBLIC_PREFIX}/"
-        wanted = set(outputs)
         return {
             item["path"][len(prefix) :]: item["sha"]
             for item in payload["tree"]
@@ -87,7 +102,6 @@ class GitHubPublisher:
             and item.get("type") == "blob"
             and isinstance(item.get("path"), str)
             and item["path"].startswith(prefix)
-            and item["path"][len(prefix) :] in wanted
             and isinstance(item.get("sha"), str)
         }
 
@@ -108,7 +122,13 @@ class GitHubPublisher:
         )
         return self._required_string(response, "sha")
 
-    def _create_tree(self, base_tree: str, blobs: dict[str, str]) -> str:
+    def _create_tree(
+        self,
+        base_tree: str,
+        blobs: dict[str, str],
+        *,
+        obsolete_paths: set[str],
+    ) -> str:
         response = self._request(
             "POST",
             "/git/trees",
@@ -122,6 +142,15 @@ class GitHubPublisher:
                         "sha": sha,
                     }
                     for name, sha in blobs.items()
+                ]
+                + [
+                    {
+                        "path": f"{PUBLIC_PREFIX}/{name}",
+                        "mode": "100644",
+                        "type": "blob",
+                        "sha": None,
+                    }
+                    for name in sorted(obsolete_paths)
                 ],
             },
         )
