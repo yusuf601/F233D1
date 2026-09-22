@@ -104,6 +104,27 @@ def test_selects_open_aq_v3_latest_row_by_sensors_id_without_parameter_metadata(
     }
 
 
+def test_latest_measurement_uses_newest_timestamp_regardless_of_response_order():
+    rows = [
+        {
+            "sensorsId": 501,
+            "datetime": {"utc": "2026-09-21T00:00:00Z"},
+            "value": 10.0,
+        },
+        {
+            "sensorsId": 501,
+            "datetime": {"utc": "2026-09-22T00:00:00Z"},
+            "value": 20.0,
+        },
+    ]
+
+    reading = select_latest_measurement(rows, sensor_id=501)
+
+    assert reading is not None
+    assert reading["value"] == 20.0
+    assert reading["measured_at"] == "2026-09-22T00:00:00Z"
+
+
 def test_duplicate_interval_is_counted_once_per_sensor():
     observations = [
         hour("2026-09-20T01:00:00Z", 10.0, sensor_id=501),

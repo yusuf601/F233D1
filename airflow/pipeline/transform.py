@@ -242,6 +242,7 @@ def select_latest_measurement(
         else:
             candidates.append(row)
 
+    newest: tuple[datetime, dict[str, object]] | None = None
     for row in candidates:
         row_sensor_id = row.get(
             "sensorsId", row.get("sensorId", row.get("sensor_id", row.get("id")))
@@ -252,18 +253,24 @@ def select_latest_measurement(
         measured_at = _nested_utc(row.get("datetime", row.get("datetimeFrom")))
         if value is None or measured_at is None:
             continue
+        try:
+            measured_utc = _utc_datetime(measured_at)
+        except (TypeError, ValueError):
+            continue
         parameter = row.get("parameter")
         unit = (
             parameter.get("units")
             if isinstance(parameter, Mapping)
             else row.get("unit", row.get("units"))
         )
-        return {
+        reading = {
             "value": value,
             "measured_at": measured_at,
             "unit": unit if isinstance(unit, str) and unit else None,
         }
-    return None
+        if newest is None or measured_utc > newest[0]:
+            newest = (measured_utc, reading)
+    return newest[1] if newest is not None else None
 
 
 def normalize_hourly_observations(

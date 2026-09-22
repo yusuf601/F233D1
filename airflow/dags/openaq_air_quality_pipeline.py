@@ -23,7 +23,12 @@ from pipeline.exceptions import (
     non_retryable_authentication_failure,
 )
 from pipeline.github_publisher import GitHubPublisher
-from pipeline.locations import normalize_global_locations, select_pm25_sensor, valid_indonesia_locations
+from pipeline.locations import (
+    normalize_global_locations,
+    pm25_sensor_candidates,
+    select_pm25_sensor,
+    valid_indonesia_locations,
+)
 from pipeline.models import Location
 from pipeline.openaq_client import OpenAQClient
 from pipeline.outputs import (
@@ -184,14 +189,11 @@ def select_pm25_sensors(indonesia_path: str) -> list[dict[str, int | str]]:
     specs: list[dict[str, int | str]] = []
     for item in document.get("locations", []):
         location = Location.model_validate(item)
-        sensor = select_pm25_sensor(location)
-        if sensor is not None:
+        if pm25_sensor_candidates(location):
             specs.append(
                 {
                     "indonesia_path": indonesia_path,
                     "location_id": location.id,
-                    "sensor_id": sensor.id,
-                    "unit": sensor.units,
                 }
             )
     _write_json(_stage_directory() / "sensor-specifications.json", {"sensors": specs})
@@ -202,15 +204,44 @@ def select_pm25_sensors(indonesia_path: str) -> list[dict[str, int | str]]:
 def fetch_indonesia_measurements(sensor: dict[str, int | str]) -> str:
     """Fetch one station's small measurement artifact; never return payload via XCom."""
     location_id = int(sensor["location_id"])
-    sensor_id = int(sensor["sensor_id"])
     indonesia_path = str(sensor["indonesia_path"])
-    unit = str(sensor["unit"])
     location = _selected_location(indonesia_path, location_id)
     end = _utc_midnight_now()
     start = end - HISTORY_DURATION
-    path = _stage_directory() / "measurements" / f"{location_id}-{sensor_id}.json"
+    path = _stage_directory() / "measurements" / f"{location_id}.json"
     try:
         client = OpenAQClient(_require_environment("OPENAQ_API_KEY"))
+        latest_rows = client.latest(location_id)
+        selected_sensor = select_pm25_sensor(location, latest_rows=latest_rows)
+        if selected_sensor is None:
+            fallback_sensor = pm25_sensor_candidates(location)[0]
+            snapshot = StationSnapshot(
+                station=InventoryStation(
+                    id=location.id,
+                    name=location.name,
+                    country_code="ID",
+                    country_name="Indonesia",
+                    coordinates=location.coordinates,
+                ),
+                selected_sensor_id=fallback_sensor.id,
+                latest=_latest_station(
+                    latest_rows,
+                    location=location,
+                    sensor_id=fallback_sensor.id,
+                    unit=fallback_sensor.units,
+                ),
+                status="unavailable",
+                history=None,
+                provider=None,
+            )
+            artifact = {
+                "kind": "unavailable",
+                "location_id": location_id,
+                "snapshot": snapshot.model_dump(mode="json"),
+            }
+            return _write_json(path, artifact)
+        sensor_id = selected_sensor.id
+        unit = selected_sensor.units
         artifact = {
             "kind": "fetched",
             "location_id": location_id,
@@ -218,7 +249,7 @@ def fetch_indonesia_measurements(sensor: dict[str, int | str]) -> str:
             "unit": unit,
             "start": start.isoformat(),
             "end": end.isoformat(),
-            "latest": client.latest(location_id),
+            "latest": latest_rows,
             "hours": client.sensor_hours(sensor_id, start, end),
         }
     except AuthenticationError as error:
@@ -230,7 +261,6 @@ def fetch_indonesia_measurements(sensor: dict[str, int | str]) -> str:
         artifact = {
             "kind": "cached",
             "location_id": location_id,
-            "sensor_id": sensor_id,
             "snapshot": cached.model_dump(mode="json"),
         }
     return _write_json(path, artifact)
@@ -243,6 +273,9 @@ def aggregate_daily_30d(observation_paths: list[str]) -> str:
     failure_count = 0
     for path in observation_paths:
         artifact = _read_json(path)
+        if artifact.get("kind") == "unavailable":
+            snapshots.append(StationSnapshot.model_validate(artifact["snapshot"]))
+            continue
         if artifact.get("kind") == "cached":
             snapshot = StationSnapshot.model_validate(artifact["snapshot"])
             snapshots.append(snapshot)

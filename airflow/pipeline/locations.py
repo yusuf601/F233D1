@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Iterable, Mapping
 
 from pydantic import ValidationError
 
 from pipeline.models import Coordinates, GlobalStation, Location, Sensor
+from pipeline.transform import select_latest_measurement
 
 
 INDONESIA_BOUNDS = {
@@ -112,11 +114,41 @@ def valid_indonesia_locations(rows: Iterable[Mapping[str, Any]]) -> list[Locatio
     ]
 
 
-def select_pm25_sensor(location: Location) -> Sensor | None:
+def pm25_sensor_candidates(location: Location) -> list[Sensor]:
+    return sorted(
+        [sensor for sensor in location.sensors if sensor.parameter == "pm25"],
+        key=lambda sensor: sensor.id,
+    )
+
+
+def select_pm25_sensor(
+    location: Location,
+    *,
+    latest_rows: Iterable[Mapping[str, Any]] | None = None,
+) -> Sensor | None:
+    candidates = pm25_sensor_candidates(location)
+    if latest_rows is not None:
+        rows = list(latest_rows)
+        measured: list[tuple[datetime, Sensor]] = []
+        for sensor in candidates:
+            reading = select_latest_measurement(rows, sensor_id=sensor.id)
+            if reading is None:
+                continue
+            try:
+                measured_at = datetime.fromisoformat(str(reading["measured_at"]))
+            except (TypeError, ValueError):
+                continue
+            if measured_at.tzinfo is None or measured_at.utcoffset() is None:
+                continue
+            measured.append((measured_at, sensor))
+        if not measured:
+            return None
+        return max(measured, key=lambda item: (item[0], -item[1].id))[1]
+
     candidates = [
         sensor
-        for sensor in location.sensors
-        if sensor.parameter == "pm25" and sensor.datetime_last is not None
+        for sensor in candidates
+        if sensor.datetime_last is not None
     ]
     if not candidates:
         return None

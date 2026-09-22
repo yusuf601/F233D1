@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+import pipeline.locations as locations
 from pipeline.locations import (
     normalize_global_locations,
     select_pm25_sensor,
@@ -295,3 +296,34 @@ def test_sensor_selection_returns_none_when_all_pm25_timestamps_are_missing():
     )
 
     assert select_pm25_sensor(missing_dates) is None
+
+
+def test_pm25_candidates_include_sensors_without_metadata_timestamp():
+    [parsed] = valid_indonesia_locations(
+        [location(sensors=[sensor(14), sensor(13), sensor(12, parameter="no2")])]
+    )
+
+    assert [item.id for item in locations.pm25_sensor_candidates(parsed)] == [13, 14]
+
+
+def test_sensor_selection_uses_newest_location_latest_measurement():
+    [parsed] = valid_indonesia_locations(
+        [location(sensors=[sensor(10), sensor(11)])]
+    )
+    latest_rows = [
+        {
+            "sensorsId": 10,
+            "datetime": {"utc": "2026-09-21T08:00:00Z"},
+            "value": 15.0,
+        },
+        {
+            "sensorsId": 11,
+            "datetime": {"utc": "2026-09-22T08:00:00Z"},
+            "value": 12.0,
+        },
+    ]
+
+    chosen = select_pm25_sensor(parsed, latest_rows=latest_rows)
+
+    assert chosen is not None
+    assert chosen.id == 11
