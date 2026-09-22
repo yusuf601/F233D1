@@ -224,6 +224,48 @@ def _nested_utc(value: object) -> object:
     return value
 
 
+def select_latest_measurement(
+    rows: Iterable[Mapping[str, Any]], *, sensor_id: int
+) -> dict[str, object] | None:
+    """Return the current reading for one sensor from OpenAQ v3 latest rows.
+
+    The v3 location-latest endpoint returns the selected sensor as
+    ``sensorsId`` and does not include parameter metadata.  Older/nested
+    representations remain accepted so staged artifacts from compatible
+    endpoint variants can still be processed.
+    """
+    candidates: list[Mapping[str, Any]] = []
+    for row in rows:
+        nested = row.get("sensors")
+        if isinstance(nested, list):
+            candidates.extend(item for item in nested if isinstance(item, Mapping))
+        else:
+            candidates.append(row)
+
+    for row in candidates:
+        row_sensor_id = row.get(
+            "sensorsId", row.get("sensorId", row.get("sensor_id", row.get("id")))
+        )
+        if row_sensor_id != sensor_id:
+            continue
+        value = row.get("value")
+        measured_at = _nested_utc(row.get("datetime", row.get("datetimeFrom")))
+        if value is None or measured_at is None:
+            continue
+        parameter = row.get("parameter")
+        unit = (
+            parameter.get("units")
+            if isinstance(parameter, Mapping)
+            else row.get("unit", row.get("units"))
+        )
+        return {
+            "value": value,
+            "measured_at": measured_at,
+            "unit": unit if isinstance(unit, str) and unit else None,
+        }
+    return None
+
+
 def normalize_hourly_observations(
     rows: Iterable[Mapping[str, Any]], *, sensor_id: int
 ) -> list[HourlyObservation]:

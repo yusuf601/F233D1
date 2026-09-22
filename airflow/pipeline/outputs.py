@@ -375,6 +375,7 @@ def validate_output_payloads(outputs: dict[str, bytes]) -> dict[str, bytes]:
         "indonesia-comparison.json": ComparisonFile,
     }
     validated: dict[str, bytes] = {}
+    headers: set[tuple[object, object]] = set()
     for name, model in models.items():
         payload = outputs[name]
         if not isinstance(payload, bytes):
@@ -384,7 +385,10 @@ def validate_output_payloads(outputs: dict[str, bytes]) -> dict[str, bytes]:
             model.model_validate(decoded)
         except (TypeError, ValueError):
             raise ValueError("public output failed contract validation") from None
+        headers.add((decoded.get("schemaVersion"), decoded.get("datasetVersion")))
         validated[name] = payload
+    if len(headers) != 1:
+        raise ValueError("public output files must have one common schemaVersion and datasetVersion")
     return validated
 
 

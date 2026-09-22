@@ -65,9 +65,10 @@ calling OpenAQ or GitHub:
 ## First-run validation (local only)
 
 With `PUBLISH_TO_GITHUB=false`, a successful `publish_to_github` task reports
-`status: dry-run` and atomically copies the validated files to
-`frontend/public/data`. Confirm the directory contains exactly these five
-files:
+`status: dry-run`. The pipeline validates all five files before replacing each
+destination file atomically in `frontend/public/data`; the local dry-run
+directory is not replaced as one atomic unit. Confirm the directory contains
+exactly these five files:
 
 - `manifest.json`
 - `global-stations.json`

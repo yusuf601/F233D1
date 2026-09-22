@@ -15,6 +15,7 @@ from pipeline.transform import (
     build_comparison,
     freshness,
     normalize_hourly_observations,
+    select_latest_measurement,
 )
 
 
@@ -88,6 +89,19 @@ def test_normalizes_fixture_without_synthesizing_missing_days():
         ("2026-09-19", 12.0, 2),
         ("2026-09-21", 30.0, 1),
     ]
+
+
+def test_selects_open_aq_v3_latest_row_by_sensors_id_without_parameter_metadata():
+    """Would fail if v3 latest rows were mistaken for location sensor objects."""
+    rows = json.loads((FIXTURES / "location-latest-v3.json").read_text())
+
+    reading = select_latest_measurement(rows, sensor_id=501)
+
+    assert reading == {
+        "value": 18.2,
+        "measured_at": "2026-09-21T00:00:00Z",
+        "unit": None,
+    }
 
 
 def test_duplicate_interval_is_counted_once_per_sensor():

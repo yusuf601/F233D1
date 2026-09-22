@@ -5,10 +5,18 @@ from pathlib import Path
 
 import pytest
 
+from pipeline.exceptions import (
+    AuthenticationError,
+    GlobalInventoryUnavailableError,
+    OpenAQError,
+    abort_global_inventory_refresh,
+    non_retryable_authentication_failure,
+)
 from pipeline.outputs import (
     PUBLIC_OUTPUT_FILES,
     copy_validated_outputs,
     load_validated_outputs,
+    validate_output_payloads,
     write_validated_outputs_directory,
 )
 
@@ -61,6 +69,58 @@ def test_dry_run_copies_only_the_validated_five_public_outputs(tmp_path: Path):
     assert result == {"status": "dry-run", "output_path": str(destination)}
     assert {path.name for path in destination.iterdir()} == PUBLIC_OUTPUT_FILES
     assert (destination / "manifest.json").read_bytes() == _outputs()["manifest.json"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("datasetVersion", "other-run"), ("schemaVersion", 2)],
+)
+def test_output_validation_rejects_mixed_header_versions_before_copying(
+    field: str, value: int | str
+):
+    """Would fail if individually valid files from different runs were mixed."""
+    outputs = _outputs()
+    latest = json.loads(outputs["indonesia-latest.json"])
+    latest[field] = value
+    outputs["indonesia-latest.json"] = json.dumps(latest, separators=(",", ":")).encode() + b"\n"
+
+    with pytest.raises(ValueError, match="public output"):
+        validate_output_payloads(outputs)
+
+
+def test_global_inventory_failure_with_cache_aborts_without_replacing_it():
+    """Would fail if an API outage turned cached inventory into an empty run."""
+    cached_inventory = [{"id": 101}]
+
+    class Cache:
+        def __init__(self):
+            self.reads = 0
+
+        def read_global(self):
+            self.reads += 1
+            return cached_inventory
+
+    cache = Cache()
+
+    with pytest.raises(GlobalInventoryUnavailableError, match="publication is aborted"):
+        abort_global_inventory_refresh(OpenAQError("OpenAQ request failed"), cache)
+
+    assert cache.reads == 1
+    assert cache.read_global() == cached_inventory
+
+
+def test_authentication_failures_are_wrapped_in_a_non_retryable_task_exception():
+    """Would fail if a task exposed AuthenticationError to Airflow retry handling."""
+
+    class NonRetryableTaskFailure(Exception):
+        pass
+
+    failure = non_retryable_authentication_failure(
+        AuthenticationError("untrusted upstream message"), NonRetryableTaskFailure
+    )
+
+    assert isinstance(failure, NonRetryableTaskFailure)
+    assert str(failure) == "OpenAQ authentication failed"
 
 
 def test_staged_output_directory_reuses_identical_validated_outputs_on_retry(

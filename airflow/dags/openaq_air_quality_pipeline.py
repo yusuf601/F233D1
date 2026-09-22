@@ -9,10 +9,19 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import pendulum
+try:
+    from airflow.exceptions import AirflowFailException
+except ImportError:  # pragma: no cover - compatibility with older Airflow images
+    from airflow.exceptions import AirflowException as AirflowFailException
 from airflow.sdk import dag, get_current_context, task
 
 from pipeline.cache import CacheStore, atomic_write
-from pipeline.exceptions import AuthenticationError, OpenAQError
+from pipeline.exceptions import (
+    AuthenticationError,
+    OpenAQError,
+    abort_global_inventory_refresh,
+    non_retryable_authentication_failure,
+)
 from pipeline.github_publisher import GitHubPublisher
 from pipeline.locations import normalize_global_locations, select_pm25_sensor, valid_indonesia_locations
 from pipeline.models import Location
@@ -36,6 +45,7 @@ from pipeline.transform import (
     build_comparison,
     freshness,
     normalize_hourly_observations,
+    select_latest_measurement,
 )
 
 
@@ -116,38 +126,17 @@ def _selected_location(source: str, location_id: int) -> Location:
     raise ValueError("selected station was not present in staged inventory")
 
 
-def _nested_utc(value: object) -> object:
-    return value.get("utc") if isinstance(value, Mapping) else value
-
-
 def _latest_station(
     rows: list[dict], *, location: Location, sensor_id: int, unit: str
 ) -> LatestStation:
-    candidates: list[Mapping[str, Any]] = []
-    for row in rows:
-        sensors = row.get("sensors") if isinstance(row, Mapping) else None
-        candidates.extend(sensors if isinstance(sensors, list) else [row])
-    for row in candidates:
-        if not isinstance(row, Mapping):
-            continue
-        parameter = row.get("parameter")
-        name = parameter.get("name") if isinstance(parameter, Mapping) else parameter
-        if not isinstance(name, str) or re.sub(r"[^a-z0-9]", "", name.casefold()) != "pm25":
-            continue
-        row_sensor_id = row.get("sensorId", row.get("sensor_id", row.get("id")))
-        if row_sensor_id not in (None, sensor_id):
-            continue
-        measured_at = _nested_utc(row.get("datetime", row.get("datetimeFrom")))
-        value = row.get("value")
-        if value is None or measured_at is None:
-            continue
-        row_unit = parameter.get("units") if isinstance(parameter, Mapping) else row.get("unit")
+    reading = select_latest_measurement(rows, sensor_id=sensor_id)
+    if reading is not None:
         return LatestStation(
             station_id=location.id,
             station_name=location.name,
-            value=value,
-            measured_at=measured_at,
-            unit=row_unit if isinstance(row_unit, str) and row_unit else unit,
+            value=reading["value"],
+            measured_at=reading["measured_at"],
+            unit=reading["unit"] or unit,
         )
     return LatestStation(
         station_id=location.id,
@@ -167,13 +156,10 @@ def fetch_global_locations() -> str:
         rows = [row for row in raw_locations if isinstance(row, Mapping)]
         inventory = _inventory_rows(rows)
         cache.write_global(inventory)
-    except AuthenticationError:
-        raise
-    except OpenAQError:
-        inventory = cache.read_global()
-        if inventory is None:
-            raise
-        rows = []
+    except AuthenticationError as error:
+        raise non_retryable_authentication_failure(error, AirflowFailException) from error
+    except OpenAQError as error:
+        abort_global_inventory_refresh(error, cache)
     artifact = {
         "raw_locations": rows,
         "inventory": [item.model_dump(mode="json") for item in inventory],
@@ -235,8 +221,8 @@ def fetch_indonesia_measurements(sensor: dict[str, int | str]) -> str:
             "latest": client.latest(location_id),
             "hours": client.sensor_hours(sensor_id, start, end),
         }
-    except AuthenticationError:
-        raise
+    except AuthenticationError as error:
+        raise non_retryable_authentication_failure(error, AirflowFailException) from error
     except OpenAQError:
         cached = CacheStore(CACHE_ROOT).fallback_station(location_id)
         if cached is None:

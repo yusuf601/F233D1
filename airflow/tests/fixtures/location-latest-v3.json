@@ -1,0 +1,21 @@
+[
+  {
+    "sensorsId": 501,
+    "datetime": {
+      "utc": "2026-09-21T00:00:00Z",
+      "local": "2026-09-21T07:00:00+07:00"
+    },
+    "value": 18.2,
+    "coordinates": {
+      "latitude": -6.2088,
+      "longitude": 106.8456
+    }
+  },
+  {
+    "sensorsId": 502,
+    "datetime": {
+      "utc": "2026-09-21T00:00:00Z"
+    },
+    "value": 42.0
+  }
+]
