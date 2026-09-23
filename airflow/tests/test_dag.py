@@ -200,6 +200,26 @@ def test_dag_contract(dag_bag):
     assert dag.timetable.summary == "0 7 * * *"
     assert dag.catchup is False
     assert dag.max_active_runs == 1
+    assert "determine_run_window" in dag.task_ids
     assert "publish_to_github" in dag.task_ids
     assert dag.get_task("publish_to_github").upstream_task_ids == {"build_json"}
     assert dag.get_task("fetch_indonesia_measurements").max_active_tis_per_dag == 4
+    for task_id in (
+        "fetch_indonesia_measurements",
+        "aggregate_daily_30d",
+        "calculate_comparison_stats",
+        "build_json",
+    ):
+        assert "determine_run_window" in dag.get_task(task_id).upstream_task_ids
+
+
+def test_dag_does_not_calculate_reporting_time_independently_per_task():
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "dags"
+        / "openaq_air_quality_pipeline.py"
+    ).read_text()
+
+    assert "def determine_run_window" in source
+    assert "_utc_midnight_now" not in source
+    assert "datetime.now(UTC)" not in source

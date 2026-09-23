@@ -61,6 +61,46 @@ class TransformModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ReportingWindow(TransformModel):
+    calculated_at: datetime
+    start: datetime
+    end: datetime
+
+    @field_validator("calculated_at", mode="before")
+    @classmethod
+    def validate_calculated_at(cls, value: object) -> datetime:
+        return _utc_datetime(value)
+
+    @field_validator("start", "end", mode="before")
+    @classmethod
+    def validate_boundary(cls, value: object) -> datetime:
+        return _utc_midnight(value)
+
+    @model_validator(mode="after")
+    def validate_window(self) -> ReportingWindow:
+        if self.end - self.start != HISTORY_DURATION:
+            raise ValueError("reporting interval must be exactly 30 days")
+        expected_end = self.calculated_at.replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+        if self.end != expected_end:
+            raise ValueError("reporting interval must match calculation date")
+        return self
+
+
+def reporting_window(calculated_at: datetime | str) -> ReportingWindow:
+    calculated_utc = _utc_datetime(calculated_at)
+    end = calculated_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    return ReportingWindow(
+        calculated_at=calculated_utc,
+        start=end - HISTORY_DURATION,
+        end=end,
+    )
+
+
 class HourlyObservation(TransformModel):
     sensor_id: int = Field(strict=True, gt=0)
     datetime_from: datetime
@@ -329,6 +369,33 @@ def aggregate_daily(
     ]
 
 
+def normalize_history_window(
+    history: StationHistory,
+    *,
+    start: datetime,
+    end: datetime,
+) -> StationHistory:
+    start_utc = _utc_midnight(start)
+    end_utc = _utc_midnight(end)
+    if end_utc - start_utc != HISTORY_DURATION:
+        raise ValueError("history interval must be exactly 30 days")
+    observations = [
+        item
+        for item in deduplicate_observations(history.observations)
+        if start_utc <= item.datetime_from < end_utc
+    ]
+    return StationHistory(
+        station_id=history.station_id,
+        station_name=history.station_name,
+        sensor_id=history.sensor_id,
+        unit=history.unit,
+        start=start_utc,
+        end=end_utc,
+        points=aggregate_daily(observations, start_utc, end_utc),
+        observations=observations,
+    )
+
+
 def freshness(measured_at: datetime | None, calculated_at: datetime) -> Freshness:
     """Classify a measurement using an inclusive 24-hour freshness boundary."""
     if measured_at is None:
@@ -343,19 +410,20 @@ def freshness(measured_at: datetime | None, calculated_at: datetime) -> Freshnes
 def _history_window(
     histories: list[StationHistory], calculated_at: datetime
 ) -> tuple[datetime, datetime]:
+    expected_end = _utc_datetime(calculated_at).replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+    expected_start = expected_end - HISTORY_DURATION
     if not histories:
-        end = _utc_datetime(calculated_at).replace(
-            hour=0,
-            minute=0,
-            second=0,
-            microsecond=0,
-        )
-        return end - HISTORY_DURATION, end
+        return expected_start, expected_end
     start, end = histories[0].start, histories[0].end
-    if end - start != HISTORY_DURATION:
-        raise ValueError("station histories must cover one full 30-day interval")
     if any(item.start != start or item.end != end for item in histories[1:]):
         raise ValueError("station histories must share one interval")
+    if (start, end) != (expected_start, expected_end):
+        raise ValueError("station histories must match calculation window")
     return start, end
 
 

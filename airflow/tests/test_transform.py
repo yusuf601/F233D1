@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+import pipeline.transform as transform
 from pipeline.transform import (
     HourlyObservation,
     LatestStation,
@@ -244,6 +245,86 @@ def test_station_statistics_use_deduplicated_observations_in_the_full_interval()
     assert stats.days_available == 2
     assert stats.hours_observed == 3
     assert stats.coverage_percent == pytest.approx(3 / (30 * 24) * 100)
+
+
+def test_reporting_window_is_derived_once_from_run_logical_date():
+    logical_date = datetime(2026, 9, 22, 23, 59, tzinfo=UTC)
+
+    window = transform.reporting_window(logical_date)
+
+    assert window.calculated_at == logical_date
+    assert window.start == START
+    assert window.end == END
+
+
+def test_cached_history_is_rewritten_to_the_run_window():
+    cached_start = START - timedelta(days=1)
+    cached_end = END - timedelta(days=1)
+    cached_observations = [
+        hour("2026-08-22T01:00:00Z", 999.0, sensor_id=502),
+        hour("2026-08-23T01:00:00Z", 20.0, sensor_id=502),
+    ]
+    cached_history = StationHistory(
+        station_id=2,
+        station_name="Station 2",
+        sensor_id=502,
+        unit="µg/m³",
+        start=cached_start,
+        end=cached_end,
+        points=aggregate_daily(cached_observations, cached_start, cached_end),
+        observations=cached_observations,
+    )
+
+    normalized = transform.normalize_history_window(
+        cached_history,
+        start=START,
+        end=END,
+    )
+
+    assert normalized.start == START
+    assert normalized.end == END
+    assert [item.value for item in normalized.observations] == [20.0]
+    assert [(item.date.isoformat(), item.mean) for item in normalized.points] == [
+        ("2026-08-23", 20.0)
+    ]
+
+
+def test_comparison_rejects_histories_outside_the_calculation_window():
+    old_start = START - timedelta(days=1)
+    old_end = END - timedelta(days=1)
+    old_history = StationHistory(
+        station_id=2,
+        station_name="Station 2",
+        sensor_id=502,
+        unit="µg/m³",
+        start=old_start,
+        end=old_end,
+        points=[],
+        observations=[],
+    )
+
+    with pytest.raises(ValueError, match="calculation window"):
+        build_comparison([latest(2, None, None)], [old_history], END)
+
+
+def test_comparison_rejects_histories_with_different_intervals():
+    old_history = StationHistory(
+        station_id=2,
+        station_name="Station 2",
+        sensor_id=502,
+        unit="µg/m³",
+        start=START - timedelta(days=1),
+        end=END - timedelta(days=1),
+        points=[],
+        observations=[],
+    )
+
+    with pytest.raises(ValueError, match="share one interval"):
+        build_comparison(
+            [latest(1, None, None), latest(2, None, None)],
+            [history(1, []), old_history],
+            END,
+        )
 
 
 def test_daily_reporting_coverage_uses_all_eligible_stations_and_keeps_gap_days():

@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -42,14 +42,16 @@ from pipeline.outputs import (
     write_validated_outputs_directory,
 )
 from pipeline.transform import (
-    HISTORY_DURATION,
     ComparisonOutput,
     LatestStation,
+    ReportingWindow,
     StationHistory,
     aggregate_daily,
     build_comparison,
     freshness,
+    normalize_history_window,
     normalize_hourly_observations,
+    reporting_window,
     select_latest_measurement,
 )
 
@@ -92,9 +94,8 @@ def _require_environment(name: str) -> str:
     return value
 
 
-def _utc_midnight_now() -> datetime:
-    now = datetime.now(UTC)
-    return now.replace(hour=0, minute=0, second=0, microsecond=0)
+def _validated_window(value: Mapping[str, Any]) -> ReportingWindow:
+    return ReportingWindow.model_validate(value)
 
 
 def _country_name(row: Mapping[str, Any]) -> str:
@@ -153,6 +154,21 @@ def _latest_station(
 
 
 @task
+def determine_run_window() -> dict[str, str]:
+    """Resolve one deterministic calculation/window anchor for the whole DAG run."""
+    context = get_current_context()
+    dag_run = context.get("dag_run")
+    anchor = getattr(dag_run, "logical_date", None)
+    if anchor is None:
+        anchor = getattr(dag_run, "run_after", None)
+    if anchor is None:
+        anchor = context.get("logical_date")
+    if anchor is None:
+        raise ValueError("DAG run has no deterministic time anchor")
+    return reporting_window(anchor).model_dump(mode="json")
+
+
+@task
 def fetch_global_locations() -> str:
     cache = CacheStore(CACHE_ROOT)
     try:
@@ -201,13 +217,15 @@ def select_pm25_sensors(indonesia_path: str) -> list[dict[str, int | str]]:
 
 
 @task(max_active_tis_per_dag=4)
-def fetch_indonesia_measurements(sensor: dict[str, int | str]) -> str:
+def fetch_indonesia_measurements(
+    sensor: dict[str, int | str], run_window: dict[str, str]
+) -> str:
     """Fetch one station's small measurement artifact; never return payload via XCom."""
     location_id = int(sensor["location_id"])
     indonesia_path = str(sensor["indonesia_path"])
     location = _selected_location(indonesia_path, location_id)
-    end = _utc_midnight_now()
-    start = end - HISTORY_DURATION
+    window = _validated_window(run_window)
+    start, end = window.start, window.end
     path = _stage_directory() / "measurements" / f"{location_id}.json"
     try:
         client = OpenAQClient(_require_environment("OPENAQ_API_KEY"))
@@ -267,7 +285,10 @@ def fetch_indonesia_measurements(sensor: dict[str, int | str]) -> str:
 
 
 @task
-def aggregate_daily_30d(observation_paths: list[str]) -> str:
+def aggregate_daily_30d(
+    observation_paths: list[str], run_window: dict[str, str]
+) -> str:
+    window = _validated_window(run_window)
     snapshots: list[StationSnapshot] = []
     histories: list[StationHistory] = []
     failure_count = 0
@@ -278,6 +299,12 @@ def aggregate_daily_30d(observation_paths: list[str]) -> str:
             continue
         if artifact.get("kind") == "cached":
             snapshot = StationSnapshot.model_validate(artifact["snapshot"])
+            if snapshot.history is not None:
+                snapshot.history = normalize_history_window(
+                    snapshot.history,
+                    start=window.start,
+                    end=window.end,
+                )
             snapshots.append(snapshot)
             if snapshot.history is not None:
                 histories.append(snapshot.history)
@@ -288,22 +315,24 @@ def aggregate_daily_30d(observation_paths: list[str]) -> str:
         location = _selected_location(
             str(Path(path).parents[1] / "indonesia-locations.json"), location_id
         )
-        start = datetime.fromisoformat(str(artifact["start"]))
-        end = datetime.fromisoformat(str(artifact["end"]))
         unit = str(artifact["unit"])
         latest = _latest_station(artifact.get("latest", []), location=location, sensor_id=sensor_id, unit=unit)
         observations = normalize_hourly_observations(artifact.get("hours", []), sensor_id=sensor_id)
-        history = StationHistory(
-            station_id=location.id,
-            station_name=location.name,
-            sensor_id=sensor_id,
-            unit=unit,
-            start=start,
-            end=end,
-            points=aggregate_daily(observations, start, end),
-            observations=observations,
+        history = normalize_history_window(
+            StationHistory(
+                station_id=location.id,
+                station_name=location.name,
+                sensor_id=sensor_id,
+                unit=unit,
+                start=window.start,
+                end=window.end,
+                points=aggregate_daily(observations, window.start, window.end),
+                observations=observations,
+            ),
+            start=window.start,
+            end=window.end,
         )
-        status = freshness(latest.measured_at, datetime.now(UTC))
+        status = freshness(latest.measured_at, window.calculated_at)
         snapshot = StationSnapshot(
             station=InventoryStation(
                 id=location.id,
@@ -332,11 +361,18 @@ def aggregate_daily_30d(observation_paths: list[str]) -> str:
 
 
 @task
-def calculate_comparison_stats(indonesia_path: str, histories_path: str) -> str:
+def calculate_comparison_stats(
+    indonesia_path: str,
+    histories_path: str,
+    run_window: dict[str, str],
+) -> str:
+    window = _validated_window(run_window)
     document = _read_json(histories_path)
     snapshots = [StationSnapshot.model_validate(item) for item in document.get("snapshots", [])]
     histories = [StationHistory.model_validate(item) for item in document.get("histories", [])]
-    comparison = build_comparison([item.latest for item in snapshots], histories, datetime.now(UTC))
+    comparison = build_comparison(
+        [item.latest for item in snapshots], histories, window.calculated_at
+    )
     return _write_json(
         _stage_directory() / "comparison.json",
         {"comparison": comparison.model_dump(mode="json")},
@@ -345,28 +381,25 @@ def calculate_comparison_stats(indonesia_path: str, histories_path: str) -> str:
 
 @task
 def build_json(
-    global_path: str, indonesia_path: str, histories_path: str, comparison_path: str
+    global_path: str,
+    indonesia_path: str,
+    histories_path: str,
+    comparison_path: str,
+    run_window: dict[str, str],
 ) -> str:
+    window = _validated_window(run_window)
     global_document = _read_json(global_path)
     history_document = _read_json(histories_path)
     comparison_document = _read_json(comparison_path)
     snapshots = [StationSnapshot.model_validate(item) for item in history_document.get("snapshots", [])]
-    histories = [item.history for item in snapshots if item.history is not None]
-    calculated_at = datetime.now(UTC)
-    if histories:
-        start_date = histories[0].start.date()
-        end_date = (histories[0].end - timedelta(days=1)).date()
-    else:
-        end_date = calculated_at.date() - timedelta(days=1)
-        start_date = end_date - timedelta(days=29)
     dataset = OutputDataset(
         dataset_version=re.sub(r"[^A-Za-z0-9_.-]+", "_", _stage_directory().name),
-        generated_at=calculated_at,
+        generated_at=window.calculated_at,
         global_stations=[InventoryStation.model_validate(item) for item in global_document.get("inventory", [])],
         indonesia_stations=snapshots,
         comparison=ComparisonOutput.model_validate(comparison_document["comparison"]),
-        start_date=start_date,
-        end_date=end_date,
+        start_date=window.start.date(),
+        end_date=(window.end - timedelta(days=1)).date(),
         failure_count=int(history_document.get("failure_count", 0)),
     )
     return write_validated_outputs_directory(_stage_directory(), build_outputs(dataset))
@@ -395,13 +428,24 @@ def publish_to_github(outputs_path: str) -> dict[str, str]:
     tags=["openaq", "pm25"],
 )
 def openaq_air_quality_pipeline():
+    run_window = determine_run_window()
     global_path = fetch_global_locations()
     indonesia_path = validate_indonesia_locations(global_path)
     sensor_specs = select_pm25_sensors(indonesia_path)
-    observation_paths = fetch_indonesia_measurements.expand(sensor=sensor_specs)
-    histories_path = aggregate_daily_30d(observation_paths)
-    comparison_path = calculate_comparison_stats(indonesia_path, histories_path)
-    outputs = build_json(global_path, indonesia_path, histories_path, comparison_path)
+    observation_paths = fetch_indonesia_measurements.partial(
+        run_window=run_window
+    ).expand(sensor=sensor_specs)
+    histories_path = aggregate_daily_30d(observation_paths, run_window)
+    comparison_path = calculate_comparison_stats(
+        indonesia_path, histories_path, run_window
+    )
+    outputs = build_json(
+        global_path,
+        indonesia_path,
+        histories_path,
+        comparison_path,
+        run_window,
+    )
     publish_to_github(outputs)
 
 
